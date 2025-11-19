@@ -1,0 +1,306 @@
+<!DOCTYPE html>
+<html lang="es">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>Asesor Fénix · WhatsApp Mock</title>
+    <style>
+      :root {
+        --bg: #0b141a;
+        --panel: #111b21;
+        --primary: #202c33;
+        --secondary: #005c4b;
+        --accent: #25d366;
+        --text: #e9edef;
+        --text-muted: #8696a0;
+        --border: #1f2c34;
+      }
+
+      * {
+        box-sizing: border-box;
+      }
+
+      body {
+        margin: 0;
+        min-height: 100vh;
+        font-family: 'Inter', 'SF Pro Display', system-ui, -apple-system, BlinkMacSystemFont, sans-serif;
+        background: var(--bg);
+        display: flex;
+        align-items: center;
+        justify-content: center;
+        padding: 24px;
+        color: var(--text);
+      }
+
+      .phone {
+        width: min(420px, 100%);
+        height: min(780px, calc(100vh - 32px));
+        background: var(--panel);
+        border-radius: 36px;
+        border: 6px solid #05090b;
+        display: flex;
+        flex-direction: column;
+        overflow: hidden;
+        box-shadow: 0 40px 80px rgba(0, 0, 0, 0.55);
+      }
+
+      .status-bar {
+        height: 24px;
+        display: flex;
+        justify-content: space-between;
+        padding: 0 18px;
+        align-items: center;
+        font-size: 0.8rem;
+        color: var(--text-muted);
+        background: #061018;
+      }
+
+      .chat-header {
+        background: var(--primary);
+        padding: 16px 18px;
+        display: flex;
+        align-items: center;
+        gap: 12px;
+        border-bottom: 1px solid var(--border);
+      }
+
+      .avatar {
+        width: 42px;
+        height: 42px;
+        border-radius: 50%;
+        background: linear-gradient(135deg, #ff784f, #ffb347);
+        display: grid;
+        place-items: center;
+        font-weight: 700;
+        color: #052013;
+      }
+
+      .chat-header h1 {
+        font-size: 1rem;
+        margin: 0;
+      }
+
+      .chat-header small {
+        color: var(--text-muted);
+      }
+
+      .chat-body {
+        flex: 1;
+        background: url('https://www.transparenttextures.com/patterns/cubes.png');
+        background-color: #0b141a;
+        padding: 20px 16px 24px;
+        display: flex;
+        flex-direction: column;
+        gap: 12px;
+        overflow-y: auto;
+        scroll-behavior: smooth;
+      }
+
+      .bubble {
+        max-width: 80%;
+        padding: 12px 16px;
+        border-radius: 14px;
+        font-size: 0.95rem;
+        line-height: 1.4;
+        position: relative;
+        box-shadow: 0 6px 20px rgba(0, 0, 0, 0.2);
+      }
+
+      .bubble.agent {
+        background: var(--primary);
+        align-self: flex-start;
+        border-bottom-left-radius: 0;
+      }
+
+      .bubble.user {
+        background: var(--secondary);
+        align-self: flex-end;
+        border-bottom-right-radius: 0;
+      }
+
+      .timestamp {
+        display: block;
+        font-size: 0.72rem;
+        color: var(--text-muted);
+        margin-top: 6px;
+        text-align: right;
+      }
+
+      .chat-footer {
+        padding: 16px;
+        background: var(--panel);
+        border-top: 1px solid var(--border);
+        display: flex;
+        align-items: center;
+        gap: 12px;
+      }
+
+      .chat-input {
+        flex: 1;
+        border: none;
+        border-radius: 999px;
+        padding: 12px 18px;
+        font-size: 1rem;
+        background: var(--primary);
+        color: var(--text);
+      }
+
+      .chat-input::placeholder {
+        color: var(--text-muted);
+      }
+
+      .chat-send {
+        border: none;
+        background: var(--accent);
+        color: #031b0f;
+        font-weight: 700;
+        border-radius: 50%;
+        width: 42px;
+        height: 42px;
+        display: grid;
+        place-items: center;
+        cursor: pointer;
+      }
+
+      .toast {
+        position: fixed;
+        bottom: 20px;
+        right: 20px;
+        background: rgba(3, 27, 15, 0.95);
+        padding: 12px 18px;
+        border-radius: 10px;
+        color: var(--text);
+        font-size: 0.9rem;
+        opacity: 0;
+        transform: translateY(15px);
+        transition: opacity 0.3s ease, transform 0.3s ease;
+      }
+
+      .toast.visible {
+        opacity: 1;
+        transform: translateY(0);
+      }
+
+      @media (max-width: 420px) {
+        body {
+          padding: 0;
+        }
+        .phone {
+          border-radius: 0;
+          height: 100vh;
+          border: none;
+        }
+      }
+    </style>
+  </head>
+  <body>
+    <div class="phone">
+      <div class="status-bar">
+        <span>17:45</span>
+        <span>FENIX 4G • 82%</span>
+      </div>
+      <header class="chat-header">
+        <div class="avatar">F</div>
+        <div>
+          <h1>Asesor Fénix</h1>
+          <small>en línea · WhatsApp</small>
+        </div>
+      </header>
+      <main class="chat-body" id="messages"></main>
+      <form class="chat-footer" id="chat-form">
+        <input
+          type="text"
+          class="chat-input"
+          id="message-input"
+          placeholder="Escribe tu mensaje"
+          autocomplete="off"
+          required
+        />
+        <button class="chat-send" type="submit">➤</button>
+      </form>
+    </div>
+
+    <div class="toast" id="toast">Mensaje enviado</div>
+
+    <script>
+      const SESSION_KEY = 'fenix-demo-session-id';
+      const messagesEl = document.getElementById('messages');
+      const form = document.getElementById('chat-form');
+      const input = document.getElementById('message-input');
+      const toast = document.getElementById('toast');
+      const uuid = () => (crypto?.randomUUID ? crypto.randomUUID() : `${Date.now()}-${Math.random()}`);
+      const getStoredSession = () => {
+        try {
+          return localStorage.getItem(SESSION_KEY) ?? '';
+        } catch (error) {
+          return '';
+        }
+      };
+      const persistSession = (id) => {
+        try {
+          localStorage.setItem(SESSION_KEY, id);
+        } catch (error) {
+          console.warn('No pude guardar sessionId', error);
+        }
+      };
+      let sessionId = getStoredSession() || uuid();
+      persistSession(sessionId);
+
+      const addMessage = (sender, text) => {
+        const wrapper = document.createElement('div');
+        wrapper.className = `bubble ${sender}`;
+        const now = new Date();
+        const timestamp = now.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' });
+        wrapper.innerHTML = `<div>${text}</div><span class="timestamp">${timestamp}</span>`;
+        messagesEl.appendChild(wrapper);
+        messagesEl.scrollTop = messagesEl.scrollHeight;
+        return wrapper;
+      };
+
+      const showToast = (text) => {
+        toast.textContent = text;
+        toast.classList.add('visible');
+        setTimeout(() => toast.classList.remove('visible'), 2000);
+      };
+
+      const sendMessage = async (text) => {
+        addMessage('user', text);
+        const typingBubble = addMessage('agent', 'Asesor Fénix está escribiendo…');
+        try {
+          const response = await fetch('/test-chat', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ message: text, sessionId }),
+          });
+
+          if (!response.ok) {
+            throw new Error('Solicitud fallida');
+          }
+
+          const data = await response.json();
+          if (typeof data.sessionId === 'string' && data.sessionId !== sessionId) {
+            sessionId = data.sessionId;
+            persistSession(sessionId);
+          }
+          typingBubble.innerHTML = `<div>${data.reply ?? 'Respuesta no disponible'}</div><span class="timestamp">${new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}</span>`;
+          showToast('Respuesta recibida');
+        } catch (error) {
+          typingBubble.innerHTML = '<div>Ups, no pude conectarme. Verifica el servidor.</div><span class="timestamp">--:--</span>';
+          console.error(error);
+        }
+      };
+
+      form.addEventListener('submit', (event) => {
+        event.preventDefault();
+        const text = input.value.trim();
+        if (!text) {
+          return;
+        }
+        input.value = '';
+        sendMessage(text);
+      });
+
+      addMessage('agent', '¡Bienvenido a Fénix! ¿En qué te puedo ayudar?');
+    </script>
+  </body>
+</html>

@@ -1,0 +1,302 @@
+<!DOCTYPE html>
+<html lang="es">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>Configurar producto · Asesor Fénix</title>
+    <style>
+      :root {
+        --bg: #0e1117;
+        --card: #161b22;
+        --text: #f5f6f9;
+        --muted: #9ba7be;
+        --accent: #25d366;
+        --danger: #ff6b6b;
+        --border: #232938;
+      }
+
+      * {
+        box-sizing: border-box;
+      }
+
+      body {
+        margin: 0;
+        font-family: 'Inter', system-ui, -apple-system, BlinkMacSystemFont, sans-serif;
+        background: var(--bg);
+        color: var(--text);
+        min-height: 100vh;
+        display: flex;
+        justify-content: center;
+        padding: 40px 16px;
+      }
+
+      main {
+        width: min(960px, 100%);
+      }
+
+      header {
+        margin-bottom: 24px;
+      }
+
+      header h1 {
+        margin: 0 0 8px;
+        font-size: 1.8rem;
+      }
+
+      header p {
+        margin: 0;
+        color: var(--muted);
+      }
+
+      form {
+        background: var(--card);
+        padding: 24px;
+        border-radius: 18px;
+        border: 1px solid var(--border);
+        box-shadow: 0 25px 60px rgba(0, 0, 0, 0.35);
+        display: grid;
+        gap: 18px;
+      }
+
+      label {
+        display: flex;
+        flex-direction: column;
+        gap: 8px;
+        font-size: 0.9rem;
+        color: var(--muted);
+      }
+
+      input,
+      textarea {
+        border: 1px solid var(--border);
+        border-radius: 12px;
+        background: #0c1015;
+        color: var(--text);
+        padding: 12px 14px;
+        font-size: 1rem;
+        font-family: inherit;
+        width: 100%;
+      }
+
+      textarea {
+        min-height: 100px;
+        resize: vertical;
+      }
+
+      .grid {
+        display: grid;
+        gap: 18px;
+      }
+
+      @media (min-width: 720px) {
+        .grid.two-cols {
+          grid-template-columns: repeat(2, minmax(0, 1fr));
+        }
+      }
+
+      button {
+        border: none;
+        border-radius: 12px;
+        padding: 14px 18px;
+        font-size: 1rem;
+        font-weight: 600;
+        cursor: pointer;
+      }
+
+      .actions {
+        display: flex;
+        flex-wrap: wrap;
+        gap: 12px;
+        justify-content: flex-end;
+      }
+
+      .primary {
+        background: var(--accent);
+        color: #042412;
+      }
+
+      .ghost {
+        background: transparent;
+        color: var(--muted);
+        border: 1px dashed var(--border);
+      }
+
+      .toast {
+        position: fixed;
+        top: 20px;
+        right: 20px;
+        padding: 12px 18px;
+        border-radius: 10px;
+        background: rgba(3, 27, 15, 0.9);
+        color: var(--text);
+        opacity: 0;
+        transform: translateY(-10px);
+        transition: opacity 0.3s ease, transform 0.3s ease;
+      }
+
+      .toast.visible {
+        opacity: 1;
+        transform: translateY(0);
+      }
+
+      pre {
+        background: #0c0f15;
+        padding: 16px;
+        border-radius: 12px;
+        border: 1px solid var(--border);
+        overflow-x: auto;
+        font-size: 0.85rem;
+        color: var(--muted);
+      }
+    </style>
+  </head>
+  <body>
+    <main>
+      <header>
+        <h1>Mantenedor de producto</h1>
+        <p>Actualiza la ficha del producto que usa Asesor Fénix en WhatsApp.</p>
+      </header>
+
+      <form id="product-form">
+        <div class="grid two-cols">
+          <label>Nombre <input type="text" name="name" required /></label>
+          <label>SKU <input type="text" name="sku" required /></label>
+        </div>
+        <div class="grid two-cols">
+          <label>Precio (num)
+            <input type="number" min="0" step="0.01" name="price" required />
+          </label>
+          <label>Moneda (ej. BOB, MXN)
+            <input type="text" name="currency" maxlength="6" required />
+          </label>
+        </div>
+        <label>Descripción corta
+          <textarea name="shortDescription" rows="2" required></textarea>
+        </label>
+        <label>Highlights (una línea por bullet)
+          <textarea name="highlights" rows="4" required></textarea>
+        </label>
+        <label>Materiales (una línea por item)
+          <textarea name="materials" rows="3" required></textarea>
+        </label>
+        <div class="grid two-cols">
+          <label>Contenido del paquete
+            <textarea name="packageIncludes" rows="2" required></textarea>
+          </label>
+          <label>Promesa de entrega
+            <textarea name="deliveryPromise" rows="2" required></textarea>
+          </label>
+        </div>
+        <label>Pitch comercial
+          <textarea name="pitch" rows="3" required></textarea>
+        </label>
+        <div class="actions">
+          <button class="ghost" type="button" id="copy-snippet">Copiar JSON</button>
+          <button class="primary" type="submit">Guardar cambios</button>
+        </div>
+        <pre id="preview"></pre>
+      </form>
+    </main>
+
+    <div class="toast" id="toast">Guardado</div>
+
+    <script>
+      const form = document.getElementById('product-form');
+      const toast = document.getElementById('toast');
+      const preview = document.getElementById('preview');
+      const copyBtn = document.getElementById('copy-snippet');
+
+      const showToast = (message) => {
+        toast.textContent = message;
+        toast.classList.add('visible');
+        setTimeout(() => toast.classList.remove('visible'), 2000);
+      };
+
+      const serializeForm = () => {
+        const data = Object.fromEntries(new FormData(form).entries());
+        return {
+          name: data.name?.trim(),
+          sku: data.sku?.trim(),
+          price: Number(data.price),
+          currency: data.currency?.trim().toUpperCase(),
+          shortDescription: data.shortDescription?.trim(),
+          highlights: splitLines(data.highlights),
+          materials: splitLines(data.materials),
+          packageIncludes: data.packageIncludes?.trim(),
+          deliveryPromise: data.deliveryPromise?.trim(),
+          pitch: data.pitch?.trim(),
+        };
+      };
+
+      const splitLines = (value = '') => {
+        return value
+          .split(/\r?\n/)
+          .map((line) => line.trim())
+          .filter(Boolean);
+      };
+
+      const updatePreview = () => {
+        const payload = serializeForm();
+        preview.textContent = JSON.stringify(payload, null, 2);
+      };
+
+      const populateForm = (data) => {
+        Object.entries(data).forEach(([key, value]) => {
+          const field = form.elements.namedItem(key);
+          if (!field) return;
+          if (Array.isArray(value)) {
+            field.value = value.join('\n');
+          } else {
+            field.value = value;
+          }
+        });
+        updatePreview();
+      };
+
+      const fetchProduct = async () => {
+        try {
+          const response = await fetch('/api/product');
+          if (!response.ok) throw new Error('Error cargando producto');
+          const data = await response.json();
+          populateForm(data);
+        } catch (error) {
+          showToast('No pude cargar el producto');
+          console.error(error);
+        }
+      };
+
+      form.addEventListener('input', updatePreview);
+
+      form.addEventListener('submit', async (event) => {
+        event.preventDefault();
+        const payload = serializeForm();
+        try {
+          const response = await fetch('/api/product', {
+            method: 'PUT',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify(payload),
+          });
+          if (!response.ok) {
+            const error = await response.json().catch(() => ({ error: 'Error al guardar' }));
+            throw new Error(error.error || 'Error al guardar');
+          }
+          showToast('Producto actualizado');
+        } catch (error) {
+          showToast(error.message || 'Error al guardar');
+        }
+      });
+
+      copyBtn.addEventListener('click', async () => {
+        const payload = serializeForm();
+        try {
+          await navigator.clipboard.writeText(JSON.stringify(payload, null, 2));
+          showToast('JSON copiado');
+        } catch (error) {
+          showToast('No pude copiar');
+        }
+      });
+
+      fetchProduct();
+    </script>
+  </body>
+</html>
