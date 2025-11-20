@@ -10,6 +10,7 @@ const product_1 = require("../config/product");
 const branding_1 = require("../config/branding");
 const conversationLogService_1 = require("../services/conversationLogService");
 const mediaService_1 = require("../services/mediaService");
+const leadSessionStore_1 = require("../services/leadSessionStore");
 const router = (0, express_1.Router)();
 const LA_PAZ_ZONE = 'America/La_Paz';
 const DELIVERY_START_HOUR = 9;
@@ -18,7 +19,6 @@ const PREPARATION_HOURS = 2;
 const DELIVERY_WINDOW_HOURS = 2;
 const SUPPORTED_CITIES = ['cochabamba', 'la paz', 'el alto', 'santa cruz', 'sucre'];
 const MEDIA_KEYWORDS = ['foto', 'imagen', 'video', 'demo', 'mostrar', 'ver', 'clip'];
-const leadSessions = new Map();
 const ORDER_FIELD_LABELS = {
     quantity: 'la cantidad exacta que desea',
     deliveryTime: 'una ventana de 2 horas (ej. entre 10:00 y 12:00) para la entrega',
@@ -43,7 +43,7 @@ const handleIncomingMessage = async ({ waId, normalizedWaId, profileName, text, 
         return;
     }
     const laPazNow = getLaPazNow();
-    const session = ensureSession(waId, normalizedWaId, profileName);
+    const session = await (0, leadSessionStore_1.ensureLeadSession)({ waId, normalizedWaId, profileName });
     session.history.push(`Cliente (${new Date().toISOString()}): ${cleanText}`);
     await (0, conversationLogService_1.logConversationMessage)({
         conversationId: normalizedWaId,
@@ -54,151 +54,156 @@ const handleIncomingMessage = async ({ waId, normalizedWaId, profileName, text, 
         name: session.name ?? profileName,
         metadata: { stage: session.stage },
     });
-    if (session.stage === 'nuevo') {
-        const welcome = getWelcomeMessage();
-        await (0, whatsappService_1.sendTextMessage)(session.waId, welcome);
-        session.stage = 'awaiting_name';
-        recordBotMessage(session, welcome);
-        await (0, conversationLogService_1.logConversationMessage)({
-            conversationId: normalizedWaId,
-            channel: 'whatsapp',
-            direction: 'outgoing',
-            message: welcome,
-            phone: session.waId,
-            name: 'Asesor Fénix',
-            metadata: { stage: session.stage },
-        });
-    }
-    if (session.stage === 'awaiting_name' && !session.name) {
-        const explicitName = extractNameFromMessage(cleanText);
-        if (explicitName) {
-            session.name = explicitName;
-            session.stage = session.city ? 'chatting' : 'awaiting_city';
-        }
-    }
-    if (session.stage === 'awaiting_city' && !session.city) {
-        const city = extractCityFromMessage(cleanText);
-        if (city) {
-            session.city = city;
-            session.cityAllowed = isCitySupported(city);
-            if (session.cityAllowed === false) {
-                const coverageList = formatCoverageList();
-                const notice = `Por ahora realizamos entregas en ${coverageList}. ¿Puedes compartir una dirección dentro de esas ciudades?`;
-                await (0, whatsappService_1.sendTextMessage)(session.waId, notice);
-                recordBotMessage(session, notice);
-                await (0, conversationLogService_1.logConversationMessage)({
-                    conversationId: normalizedWaId,
-                    channel: 'whatsapp',
-                    direction: 'outgoing',
-                    message: notice,
-                    phone: session.waId,
-                    name: 'Asesor Fénix',
-                    metadata: { stage: session.stage },
-                });
-            }
-            session.stage = session.cityAllowed === false ? 'awaiting_city' : 'chatting';
-        }
-    }
-    updateSessionInsights(session, cleanText);
-    if (session.stage === 'awaiting_city' && session.city) {
-        session.stage = 'chatting';
-    }
-    if (session.stage === 'chatting' && session.cityAllowed !== false && shouldStartOrderFlow(cleanText)) {
-        startOrderFlow(session);
-    }
-    if (session.stage === 'collecting_order') {
-        const captureResult = captureOrderField(session, cleanText);
-        if (captureResult === 'awaiting_confirmation') {
-            await sendOrderSummary(session, laPazNow);
-            return;
-        }
-    }
-    if (session.stage === 'awaiting_confirmation') {
-        if (isPositiveConfirmation(cleanText)) {
-            await confirmOrderWithOperations(session);
-            return;
-        }
-        if (wantsToModifyOrder(cleanText)) {
-            session.stage = 'collecting_order';
-            session.pendingFields = determineMissingFields(session.order);
-        }
-    }
-    let pendingField;
-    if (!session.name) {
-        pendingField = 'tu nombre para personalizar la atención';
-    }
-    else if (!session.city) {
-        pendingField = 'la ciudad donde te encuentras para coordinar entrega';
-    }
-    else if (session.cityAllowed === false) {
-        pendingField = `una ciudad dentro de nuestra cobertura (${formatCoverageList()})`;
-    }
-    else if (session.pendingFields[0]) {
-        pendingField = ORDER_FIELD_LABELS[session.pendingFields[0]];
-    }
-    const contextParts = [
-        `Etapa: ${session.stage}`,
-        `Nombre cliente: ${session.name ?? 'desconocido'}`,
-        `Ciudad cliente: ${session.city ?? 'sin definir'}`,
-        `Hora local (Bolivia): ${laPazNow.setLocale('es').toFormat('EEEE dd HH:mm')}`,
-    ];
-    if (session.cityAllowed === false) {
-        contextParts.push(`El cliente está fuera de cobertura (permitidas: ${formatCoverageList()})`);
-    }
-    if (session.interests?.length) {
-        contextParts.push(`Intereses mencionados: ${session.interests.join(', ')}`);
-    }
-    if (session.order) {
-        contextParts.push(`Pedido: ${session.order.quantity ?? '?'} x ${session.order.productName} (${session.order.currency} ${session.order.price}) - estado ${session.order.status}`);
-    }
-    const historySnippet = session.history.slice(-8).join('\n');
-    const aiInput = `${contextParts.join('\n')}\n\nHistorial reciente:\n${historySnippet}\n\nNuevo mensaje del cliente: ${cleanText}`;
     try {
-        const aiReply = await (0, openaiService_1.getChatGPTReply)(aiInput, {
-            name: session.name,
-            city: session.city,
-            phone: session.waId,
-            stage: session.stage,
-            pendingField,
-            notes: buildContextNotes(session),
-        });
-        await (0, whatsappService_1.sendTextMessage)(session.waId, aiReply);
-        recordBotMessage(session, aiReply);
-        await (0, conversationLogService_1.logConversationMessage)({
-            conversationId: normalizedWaId,
-            channel: 'whatsapp',
-            direction: 'outgoing',
-            message: aiReply,
-            phone: session.waId,
-            name: 'Asesor Fénix',
-            metadata: { stage: session.stage },
-        });
-        const wantsMedia = shouldShareMedia(cleanText) || isProductInterest(cleanText);
-        if (wantsMedia && !session.mediaShared) {
-            const assets = await (0, mediaService_1.listProductMedia)();
-            if (assets.length) {
-                session.mediaShared = true;
-                const intro = 'Te comparto fotos y videos del producto para que lo veas mejor 👇';
-                await (0, whatsappService_1.sendTextMessage)(session.waId, intro);
-                recordBotMessage(session, intro);
-                await (0, conversationLogService_1.logConversationMessage)({
-                    conversationId: normalizedWaId,
-                    channel: 'whatsapp',
-                    direction: 'outgoing',
-                    message: intro,
-                    phone: session.waId,
-                    name: 'Asesor Fénix',
-                    metadata: { stage: session.stage },
-                });
-                for (const asset of assets) {
-                    await (0, whatsappService_1.sendMediaMessage)({ to: session.waId, type: asset.type, link: asset.url, caption: asset.caption });
-                    recordBotMessage(session, `[Media ${asset.type}] ${asset.caption ?? asset.url}`);
+        if (session.stage === 'nuevo') {
+            const welcome = getWelcomeMessage();
+            await (0, whatsappService_1.sendTextMessage)(session.waId, welcome);
+            session.stage = 'awaiting_name';
+            recordBotMessage(session, welcome);
+            await (0, conversationLogService_1.logConversationMessage)({
+                conversationId: normalizedWaId,
+                channel: 'whatsapp',
+                direction: 'outgoing',
+                message: welcome,
+                phone: session.waId,
+                name: 'Asesor Fénix',
+                metadata: { stage: session.stage },
+            });
+        }
+        if (session.stage === 'awaiting_name' && !session.name) {
+            const explicitName = extractNameFromMessage(cleanText);
+            if (explicitName) {
+                session.name = explicitName;
+                session.stage = session.city ? 'chatting' : 'awaiting_city';
+            }
+        }
+        if (session.stage === 'awaiting_city' && !session.city) {
+            const city = extractCityFromMessage(cleanText);
+            if (city) {
+                session.city = city;
+                session.cityAllowed = isCitySupported(city);
+                if (session.cityAllowed === false) {
+                    const coverageList = formatCoverageList();
+                    const notice = `Por ahora realizamos entregas en ${coverageList}. ¿Puedes compartir una dirección dentro de esas ciudades?`;
+                    await (0, whatsappService_1.sendTextMessage)(session.waId, notice);
+                    recordBotMessage(session, notice);
+                    await (0, conversationLogService_1.logConversationMessage)({
+                        conversationId: normalizedWaId,
+                        channel: 'whatsapp',
+                        direction: 'outgoing',
+                        message: notice,
+                        phone: session.waId,
+                        name: 'Asesor Fénix',
+                        metadata: { stage: session.stage },
+                    });
+                }
+                session.stage = session.cityAllowed === false ? 'awaiting_city' : 'chatting';
+            }
+        }
+        updateSessionInsights(session, cleanText);
+        if (session.stage === 'awaiting_city' && session.city) {
+            session.stage = 'chatting';
+        }
+        if (session.stage === 'chatting' && session.cityAllowed !== false && shouldStartOrderFlow(cleanText)) {
+            startOrderFlow(session);
+        }
+        if (session.stage === 'collecting_order') {
+            const captureResult = captureOrderField(session, cleanText);
+            if (captureResult === 'awaiting_confirmation') {
+                await sendOrderSummary(session, laPazNow);
+                return;
+            }
+        }
+        if (session.stage === 'awaiting_confirmation') {
+            if (isPositiveConfirmation(cleanText)) {
+                await confirmOrderWithOperations(session);
+                return;
+            }
+            if (wantsToModifyOrder(cleanText)) {
+                session.stage = 'collecting_order';
+                session.pendingFields = determineMissingFields(session.order);
+            }
+        }
+        let pendingField;
+        if (!session.name) {
+            pendingField = 'tu nombre para personalizar la atención';
+        }
+        else if (!session.city) {
+            pendingField = 'la ciudad donde te encuentras para coordinar entrega';
+        }
+        else if (session.cityAllowed === false) {
+            pendingField = `una ciudad dentro de nuestra cobertura (${formatCoverageList()})`;
+        }
+        else if (session.pendingFields[0]) {
+            pendingField = ORDER_FIELD_LABELS[session.pendingFields[0]];
+        }
+        const contextParts = [
+            `Etapa: ${session.stage}`,
+            `Nombre cliente: ${session.name ?? 'desconocido'}`,
+            `Ciudad cliente: ${session.city ?? 'sin definir'}`,
+            `Hora local (Bolivia): ${laPazNow.setLocale('es').toFormat('EEEE dd HH:mm')}`,
+        ];
+        if (session.cityAllowed === false) {
+            contextParts.push(`El cliente está fuera de cobertura (permitidas: ${formatCoverageList()})`);
+        }
+        if (session.interests?.length) {
+            contextParts.push(`Intereses mencionados: ${session.interests.join(', ')}`);
+        }
+        if (session.order) {
+            contextParts.push(`Pedido: ${session.order.quantity ?? '?'} x ${session.order.productName} (${session.order.currency} ${session.order.price}) - estado ${session.order.status}`);
+        }
+        const historySnippet = session.history.slice(-8).join('\n');
+        const aiInput = `${contextParts.join('\n')}\n\nHistorial reciente:\n${historySnippet}\n\nNuevo mensaje del cliente: ${cleanText}`;
+        try {
+            const aiReply = await (0, openaiService_1.getChatGPTReply)(aiInput, {
+                name: session.name,
+                city: session.city,
+                phone: session.waId,
+                stage: session.stage,
+                pendingField,
+                notes: buildContextNotes(session),
+            });
+            await (0, whatsappService_1.sendTextMessage)(session.waId, aiReply);
+            recordBotMessage(session, aiReply);
+            await (0, conversationLogService_1.logConversationMessage)({
+                conversationId: normalizedWaId,
+                channel: 'whatsapp',
+                direction: 'outgoing',
+                message: aiReply,
+                phone: session.waId,
+                name: 'Asesor Fénix',
+                metadata: { stage: session.stage },
+            });
+            const wantsMedia = shouldShareMedia(cleanText) || isProductInterest(cleanText);
+            if (wantsMedia && !session.mediaShared) {
+                const assets = await (0, mediaService_1.listProductMedia)();
+                if (assets.length) {
+                    session.mediaShared = true;
+                    const intro = 'Te comparto fotos y videos del producto para que lo veas mejor 👇';
+                    await (0, whatsappService_1.sendTextMessage)(session.waId, intro);
+                    recordBotMessage(session, intro);
+                    await (0, conversationLogService_1.logConversationMessage)({
+                        conversationId: normalizedWaId,
+                        channel: 'whatsapp',
+                        direction: 'outgoing',
+                        message: intro,
+                        phone: session.waId,
+                        name: 'Asesor Fénix',
+                        metadata: { stage: session.stage },
+                    });
+                    for (const asset of assets) {
+                        await (0, whatsappService_1.sendMediaMessage)({ to: session.waId, type: asset.type, link: asset.url, caption: asset.caption });
+                        recordBotMessage(session, `[Media ${asset.type}] ${asset.caption ?? asset.url}`);
+                    }
                 }
             }
         }
+        catch (error) {
+            console.error('Error al procesar la respuesta de OpenAI', error);
+        }
     }
-    catch (error) {
-        console.error('Error al procesar la respuesta de OpenAI', error);
+    finally {
+        await (0, leadSessionStore_1.saveLeadSession)(session);
     }
 };
 exports.handleIncomingMessage = handleIncomingMessage;
@@ -263,78 +268,64 @@ const handleOperationsControlMessage = async (rawText) => {
         return;
     }
     const normalizedTarget = phone ? normalizePhone(phone) : '';
-    const session = normalizedTarget ? leadSessions.get(normalizedTarget) : undefined;
+    const session = normalizedTarget ? await (0, leadSessionStore_1.findLeadSession)(normalizedTarget) : undefined;
     if (!session || !session.order) {
         await notifyOperationsChannel(`No encontré al cliente ${phone ?? ''}.`);
         return;
     }
-    switch (command.toUpperCase()) {
-        case 'AGENDA_OK': {
-            const slot = rest[0] || session.order.requestedTime || 'sin hora definida';
-            session.order.status = 'scheduled';
-            session.order.confirmedSlot = slot;
-            session.stage = 'scheduled';
-            const message = `¡Listo ${session.name ?? ''}! Tu pedido quedó agendado para ${slot}. Te avisaré cuando salga a ruta.`;
-            await (0, whatsappService_1.sendTextMessage)(session.waId, message);
-            recordBotMessage(session, message);
-            await (0, conversationLogService_1.logConversationMessage)({
-                conversationId: session.normalizedWaId,
-                channel: 'whatsapp',
-                direction: 'outgoing',
-                message,
-                phone: session.waId,
-                name: 'Asesor Fénix',
-                metadata: { stage: session.stage },
-            });
-            await notifyOperationsChannel(`Cliente ${session.name ?? session.waId} notificado de agenda ${slot}.`, {
-                customer: session.waId,
-                slot,
-            });
-            break;
+    try {
+        switch (command.toUpperCase()) {
+            case 'AGENDA_OK': {
+                const slot = rest[0] || session.order.requestedTime || 'sin hora definida';
+                session.order.status = 'scheduled';
+                session.order.confirmedSlot = slot;
+                session.stage = 'scheduled';
+                const message = `¡Listo ${session.name ?? ''}! Tu pedido quedó agendado para ${slot}. Te avisaré cuando salga a ruta.`;
+                await (0, whatsappService_1.sendTextMessage)(session.waId, message);
+                recordBotMessage(session, message);
+                await (0, conversationLogService_1.logConversationMessage)({
+                    conversationId: session.normalizedWaId,
+                    channel: 'whatsapp',
+                    direction: 'outgoing',
+                    message,
+                    phone: session.waId,
+                    name: 'Asesor Fénix',
+                    metadata: { stage: session.stage },
+                });
+                await notifyOperationsChannel(`Cliente ${session.name ?? session.waId} notificado de agenda ${slot}.`, {
+                    customer: session.waId,
+                    slot,
+                });
+                break;
+            }
+            case 'PEDIDO_ENTREGADO': {
+                session.order.status = 'delivered';
+                session.stage = 'delivered';
+                const deliveredMessage = `Hola ${session.name ?? ''}, nuestro equipo confirma que tu pedido fue entregado. ¿Todo llegó bien?`;
+                await (0, whatsappService_1.sendTextMessage)(session.waId, deliveredMessage);
+                recordBotMessage(session, deliveredMessage);
+                await (0, conversationLogService_1.logConversationMessage)({
+                    conversationId: session.normalizedWaId,
+                    channel: 'whatsapp',
+                    direction: 'outgoing',
+                    message: `Hola ${session.name ?? ''}, nuestro equipo confirma que tu pedido fue entregado. ¿Todo llegó bien?`,
+                    phone: session.waId,
+                    name: 'Asesor Fénix',
+                    metadata: { stage: session.stage },
+                });
+                await notifyOperationsChannel('Seguimiento de entrega enviado al cliente.', {
+                    customer: session.waId,
+                });
+                break;
+            }
+            default:
+                await notifyOperationsChannel('Comando no reconocido. Usa AGENDA_OK o PEDIDO_ENTREGADO.');
+                break;
         }
-        case 'PEDIDO_ENTREGADO': {
-            session.order.status = 'delivered';
-            session.stage = 'delivered';
-            const deliveredMessage = `Hola ${session.name ?? ''}, nuestro equipo confirma que tu pedido fue entregado. ¿Todo llegó bien?`;
-            await (0, whatsappService_1.sendTextMessage)(session.waId, deliveredMessage);
-            recordBotMessage(session, deliveredMessage);
-            await (0, conversationLogService_1.logConversationMessage)({
-                conversationId: session.normalizedWaId,
-                channel: 'whatsapp',
-                direction: 'outgoing',
-                message: `Hola ${session.name ?? ''}, nuestro equipo confirma que tu pedido fue entregado. ¿Todo llegó bien?`,
-                phone: session.waId,
-                name: 'Asesor Fénix',
-                metadata: { stage: session.stage },
-            });
-            await notifyOperationsChannel('Seguimiento de entrega enviado al cliente.', {
-                customer: session.waId,
-            });
-            break;
-        }
-        default:
-            await notifyOperationsChannel('Comando no reconocido. Usa AGENDA_OK o PEDIDO_ENTREGADO.');
-            break;
     }
-};
-const ensureSession = (waId, normalizedWaId, profileName) => {
-    let session = leadSessions.get(normalizedWaId);
-    if (!session) {
-        session = {
-            waId,
-            normalizedWaId,
-            stage: 'nuevo',
-            history: [],
-            pendingFields: [],
-            mediaShared: false,
-        };
-        leadSessions.set(normalizedWaId, session);
+    finally {
+        await (0, leadSessionStore_1.saveLeadSession)(session);
     }
-    session.waId = waId;
-    if (profileName && !session.name) {
-        session.name = profileName;
-    }
-    return session;
 };
 const shouldShareMedia = (message) => {
     const normalized = message.toLowerCase();
