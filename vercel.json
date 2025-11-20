@@ -1,0 +1,8 @@
+{
+  "version": 2,
+  "rewrites": [
+    { "source": "/webhook", "destination": "/api/server" },
+    { "source": "/test-chat", "destination": "/api/server" },
+    { "source": "/api/:path*", "destination": "/api/server" }
+  ]
+}
