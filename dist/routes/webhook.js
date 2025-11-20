@@ -48,6 +48,7 @@ const handleIncomingMessage = async ({ waId, normalizedWaId, profileName, text, 
         const welcome = getWelcomeMessage();
         await (0, whatsappService_1.sendTextMessage)(session.waId, welcome);
         session.stage = 'awaiting_name';
+        recordBotMessage(session, welcome);
         await (0, conversationLogService_1.logConversationMessage)({
             conversationId: normalizedWaId,
             channel: 'whatsapp',
@@ -106,8 +107,21 @@ const handleIncomingMessage = async ({ waId, normalizedWaId, profileName, text, 
     else if (session.pendingFields[0]) {
         pendingField = ORDER_FIELD_LABELS[session.pendingFields[0]];
     }
+    const contextParts = [
+        `Etapa: ${session.stage}`,
+        `Nombre cliente: ${session.name ?? 'desconocido'}`,
+        `Ciudad cliente: ${session.city ?? 'sin definir'}`,
+    ];
+    if (session.interests?.length) {
+        contextParts.push(`Intereses mencionados: ${session.interests.join(', ')}`);
+    }
+    if (session.order) {
+        contextParts.push(`Pedido: ${session.order.quantity ?? '?'} x ${session.order.productName} (${session.order.currency} ${session.order.price}) - estado ${session.order.status}`);
+    }
+    const historySnippet = session.history.slice(-8).join('\n');
+    const aiInput = `${contextParts.join('\n')}\n\nHistorial reciente:\n${historySnippet}\n\nNuevo mensaje del cliente: ${cleanText}`;
     try {
-        const aiReply = await (0, openaiService_1.getChatGPTReply)(cleanText, {
+        const aiReply = await (0, openaiService_1.getChatGPTReply)(aiInput, {
             name: session.name,
             city: session.city,
             phone: session.waId,
@@ -116,6 +130,7 @@ const handleIncomingMessage = async ({ waId, normalizedWaId, profileName, text, 
             notes: buildContextNotes(session),
         });
         await (0, whatsappService_1.sendTextMessage)(session.waId, aiReply);
+        recordBotMessage(session, aiReply);
         await (0, conversationLogService_1.logConversationMessage)({
             conversationId: normalizedWaId,
             channel: 'whatsapp',
@@ -260,6 +275,9 @@ const ensureSession = (waId, normalizedWaId, profileName) => {
         session.name = profileName;
     }
     return session;
+};
+const recordBotMessage = (session, text) => {
+    session.history.push(`Bot (${new Date().toISOString()}): ${text}`);
 };
 const extractNameFromMessage = (message) => {
     const explicit = message.match(/(?:soy|me llamo|mi nombre es)\s+([a-záéíóúüñ\s]+)/i);

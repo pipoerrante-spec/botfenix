@@ -103,6 +103,7 @@ export const handleIncomingMessage = async ({
     const welcome = getWelcomeMessage();
     await sendTextMessage(session.waId, welcome);
     session.stage = 'awaiting_name';
+    recordBotMessage(session, welcome);
     await logConversationMessage({
       conversationId: normalizedWaId,
       channel: 'whatsapp',
@@ -169,8 +170,25 @@ export const handleIncomingMessage = async ({
     pendingField = ORDER_FIELD_LABELS[session.pendingFields[0]];
   }
 
+  const contextParts = [
+    `Etapa: ${session.stage}`,
+    `Nombre cliente: ${session.name ?? 'desconocido'}`,
+    `Ciudad cliente: ${session.city ?? 'sin definir'}`,
+  ];
+  if (session.interests?.length) {
+    contextParts.push(`Intereses mencionados: ${session.interests.join(', ')}`);
+  }
+  if (session.order) {
+    contextParts.push(
+      `Pedido: ${session.order.quantity ?? '?'} x ${session.order.productName} (${session.order.currency} ${session.order.price}) - estado ${session.order.status}`,
+    );
+  }
+
+  const historySnippet = session.history.slice(-8).join('\n');
+  const aiInput = `${contextParts.join('\n')}\n\nHistorial reciente:\n${historySnippet}\n\nNuevo mensaje del cliente: ${cleanText}`;
+
   try {
-    const aiReply = await getChatGPTReply(cleanText, {
+    const aiReply = await getChatGPTReply(aiInput, {
       name: session.name,
       city: session.city,
       phone: session.waId,
@@ -180,6 +198,7 @@ export const handleIncomingMessage = async ({
     });
 
     await sendTextMessage(session.waId, aiReply);
+    recordBotMessage(session, aiReply);
     await logConversationMessage({
       conversationId: normalizedWaId,
       channel: 'whatsapp',
@@ -341,6 +360,10 @@ const ensureSession = (waId: string, normalizedWaId: string, profileName?: strin
   }
 
   return session;
+};
+
+const recordBotMessage = (session: LeadSession, text: string): void => {
+  session.history.push(`Bot (${new Date().toISOString()}): ${text}`);
 };
 
 const extractNameFromMessage = (message: string): string | undefined => {
