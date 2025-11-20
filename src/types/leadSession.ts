@@ -30,8 +30,10 @@ export interface LeadSession {
   name?: string;
   city?: string;
   cityAllowed?: boolean;
+  cityNoticeSent?: boolean;
   interests?: string[];
   pendingFields: OrderField[];
   order?: OrderDraft;
   mediaShared?: boolean;
+  introducedProduct?: boolean;
 }

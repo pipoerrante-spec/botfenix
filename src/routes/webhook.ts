@@ -24,7 +24,7 @@ const MEDIA_KEYWORDS = ['foto', 'imagen', 'video', 'demo', 'mostrar', 'ver', 'cl
 const ORDER_FIELD_LABELS: Record<OrderField, string> = {
   quantity: 'la cantidad exacta que desea',
   deliveryTime: 'una ventana de 2 horas (ej. entre 10:00 y 12:00) para la entrega',
-  address: 'la dirección o ubicación precisa de entrega',
+  address: 'un enlace de ubicación (no en tiempo real) o dirección exacta para la entrega',
 };
 
 const ORDER_KEYWORDS = ['comprar', 'pedido', 'orden', 'agendar', 'apartalo', 'lo quiero', 'mandalo', 'envíalo', 'envialo'];
@@ -79,7 +79,7 @@ export const handleIncomingMessage = async ({
     if (session.stage === 'nuevo') {
       const welcome = getWelcomeMessage();
       await sendTextMessage(session.waId, welcome);
-      session.stage = 'awaiting_name';
+      session.stage = 'chatting';
       recordBotMessage(session, welcome);
       await logConversationMessage({
         conversationId: normalizedWaId,
@@ -90,44 +90,30 @@ export const handleIncomingMessage = async ({
         name: 'Asesor Fénix',
         metadata: { stage: session.stage },
       });
+      await sendProductIntro(session, normalizedWaId);
     }
 
-    if (session.stage === 'awaiting_name' && !session.name) {
+    if (!session.name) {
       const explicitName = extractNameFromMessage(cleanText);
       if (explicitName) {
         session.name = explicitName;
-        session.stage = session.city ? 'chatting' : 'awaiting_city';
       }
     }
 
-    if (session.stage === 'awaiting_city' && !session.city) {
+    if (!session.city) {
       const city = extractCityFromMessage(cleanText);
       if (city) {
         session.city = city;
         session.cityAllowed = isCitySupported(city);
-        if (session.cityAllowed === false) {
-          const coverageList = formatCoverageList();
-          const notice = `Por ahora realizamos entregas en ${coverageList}. ¿Puedes compartir una dirección dentro de esas ciudades?`;
-          await sendTextMessage(session.waId, notice);
-          recordBotMessage(session, notice);
-          await logConversationMessage({
-            conversationId: normalizedWaId,
-            channel: 'whatsapp',
-            direction: 'outgoing',
-            message: notice,
-            phone: session.waId,
-            name: 'Asesor Fénix',
-            metadata: { stage: session.stage },
-          });
-        }
-        session.stage = session.cityAllowed === false ? 'awaiting_city' : 'chatting';
       }
     }
 
     updateSessionInsights(session, cleanText);
 
-    if (session.stage === 'awaiting_city' && session.city) {
-      session.stage = 'chatting';
+    await maybeHandleCoverageNotice(session, normalizedWaId);
+
+    if (!session.introducedProduct) {
+      await sendProductIntro(session, normalizedWaId);
     }
 
     const askedForMedia = shouldShareMedia(cleanText) || isProductInterest(cleanText);
@@ -166,12 +152,10 @@ export const handleIncomingMessage = async ({
     }
 
     let pendingField: string | undefined;
-    if (!session.name) {
-      pendingField = 'tu nombre para personalizar la atención';
-    } else if (!session.city) {
-      pendingField = 'la ciudad donde te encuentras para coordinar entrega';
-    } else if (session.cityAllowed === false) {
+    if (session.cityAllowed === false) {
       pendingField = `una ciudad dentro de nuestra cobertura (${formatCoverageList()})`;
+    } else if ((session.stage === 'collecting_order' || session.stage === 'awaiting_confirmation') && !session.city) {
+      pendingField = 'el enlace de ubicación (sin compartir ubicación en vivo) o la ciudad exacta para coordinar la entrega';
     } else if (session.pendingFields[0]) {
       pendingField = ORDER_FIELD_LABELS[session.pendingFields[0]];
     }
@@ -622,6 +606,49 @@ const buildContextNotes = (session: LeadSession): string[] => {
   }
   notes.push(`Media compartida: ${session.mediaShared ? 'sí' : 'no'}`);
   return notes;
+};
+
+const sendProductIntro = async (session: LeadSession, normalizedWaId: string): Promise<void> => {
+  if (session.introducedProduct) {
+    return;
+  }
+
+  const product = getProductInfo();
+  const topHighlights = product.highlights.slice(0, 2).join('. ');
+  const intro = `Tenemos disponibles los ${product.name} por ${product.currency} ${product.price}. ${product.shortDescription}. Destacan por: ${topHighlights}. ¿Quieres verlos en acción o saber cómo se instalan?`;
+
+  await sendTextMessage(session.waId, intro);
+  recordBotMessage(session, intro);
+  await logConversationMessage({
+    conversationId: normalizedWaId,
+    channel: 'whatsapp',
+    direction: 'outgoing',
+    message: intro,
+    phone: session.waId,
+    name: 'Asesor Fénix',
+    metadata: { stage: session.stage, intro: true },
+  });
+
+  session.introducedProduct = true;
+};
+
+const maybeHandleCoverageNotice = async (session: LeadSession, normalizedWaId: string): Promise<void> => {
+  if (session.city && session.cityAllowed === false && !session.cityNoticeSent) {
+    const coverageList = formatCoverageList();
+    const notice = `Por ahora realizamos entregas en ${coverageList}. ¿Puedes compartir una dirección o punto de entrega dentro de esas ciudades?`;
+    await sendTextMessage(session.waId, notice);
+    recordBotMessage(session, notice);
+    await logConversationMessage({
+      conversationId: normalizedWaId,
+      channel: 'whatsapp',
+      direction: 'outgoing',
+      message: notice,
+      phone: session.waId,
+      name: 'Asesor Fénix',
+      metadata: { stage: session.stage, coverage: true },
+    });
+    session.cityNoticeSent = true;
+  }
 };
 
 const shareProductMedia = async ({

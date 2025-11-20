@@ -38,10 +38,12 @@ const materializeSession = (normalizedWaId: string, waId: string, snapshot: Lead
     name: snapshot.name,
     city: snapshot.city,
     cityAllowed: snapshot.cityAllowed,
+    cityNoticeSent: snapshot.cityNoticeSent,
     interests: snapshot.interests ?? [],
     pendingFields: snapshot.pendingFields ?? [],
     order: snapshot.order,
     mediaShared: snapshot.mediaShared ?? false,
+    introducedProduct: snapshot.introducedProduct ?? false,
   };
 };
 
@@ -87,10 +89,12 @@ const buildSnapshot = (session: LeadSession): LeadSessionSnapshot => {
     name: session.name,
     city: session.city,
     cityAllowed: session.cityAllowed,
+    cityNoticeSent: session.cityNoticeSent,
     interests: session.interests ?? [],
     pendingFields: session.pendingFields,
     order: session.order,
     mediaShared: session.mediaShared ?? false,
+    introducedProduct: session.introducedProduct ?? false,
   };
 };
 
@@ -118,6 +122,7 @@ export const ensureLeadSession = async (params: {
       name: profileName,
       pendingFields: [],
       mediaShared: false,
+      introducedProduct: false,
     };
     cacheSession(session);
   } else {
