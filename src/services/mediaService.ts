@@ -9,6 +9,7 @@ export interface MediaAsset {
   type: MediaAssetType;
   url: string;
   caption?: string;
+  extension?: string;
 }
 
 interface MediaCache {
@@ -139,12 +140,13 @@ export const listProductMedia = async (): Promise<MediaAsset[]> => {
     const filePaths = await enumerateFiles(client, basePath);
 
     const assets: MediaAsset[] = [];
-    for (const filePath of filePaths) {
-      const [, ext = ''] = /\.([^.]+)$/.exec(filePath) ?? [];
-      const type = resolveTypeFromExtension(ext);
-      if (!type) {
-        continue;
-      }
+  for (const filePath of filePaths) {
+    const [, extRaw = ''] = /\.([^.]+)$/.exec(filePath) ?? [];
+    const ext = extRaw.toLowerCase();
+    const type = resolveTypeFromExtension(ext);
+    if (!type) {
+      continue;
+    }
 
       const url = await resolveFileUrl(client, filePath);
       if (!url) {
@@ -155,6 +157,7 @@ export const listProductMedia = async (): Promise<MediaAsset[]> => {
         type,
         url,
         caption: buildCaption(filePath),
+        extension: ext,
       });
     }
 

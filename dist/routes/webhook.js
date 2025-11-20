@@ -400,7 +400,7 @@ const recordBotMessage = (session, text) => {
     session.history.push(`Bot (${new Date().toISOString()}): ${text}`);
 };
 const extractNameFromMessage = (message) => {
-    const explicit = message.match(/(?:soy|me llamo|mi nombre es)\s+([a-záéíóúüñ\s]+)/i);
+    const explicit = message.match(/(?:soy|me llamo|mi nombre(?:s)? es|me llaman|me dicen|mi apodo es)\s*[:\-]?\s*([a-záéíóúüñ\s]+)/i);
     if (explicit?.[1]) {
         return capitalizeWords(explicit[1].trim());
     }
@@ -673,6 +673,22 @@ const shareProductMedia = async ({ session, normalizedWaId, isResend, introMessa
     });
     let sentAny = false;
     for (const asset of assets) {
+        if (asset.type === 'video' && !canSendVideoAsset(asset)) {
+            const linkMessage = `${asset.caption ?? 'Video demostrativo'}: ${asset.url}`;
+            await (0, whatsappService_1.sendTextMessage)(session.waId, linkMessage);
+            recordBotMessage(session, linkMessage);
+            sentAny = true;
+            await (0, conversationLogService_1.logConversationMessage)({
+                conversationId: normalizedWaId,
+                channel: 'whatsapp',
+                direction: 'outgoing',
+                message: linkMessage,
+                phone: session.waId,
+                name: 'Asesor Fénix',
+                metadata: { stage: session.stage, mediaShared: true, fallbackLink: true },
+            });
+            continue;
+        }
         try {
             await (0, whatsappService_1.sendMediaMessage)({ to: session.waId, type: asset.type, link: asset.url, caption: asset.caption });
             sentAny = true;
@@ -716,6 +732,7 @@ function needsMediaResend(message) {
     const resendClues = ['reenv', 'otra vez', 'no me lleg', 'no llegaron', 'no llegó', 'no recib'];
     return resendClues.some((pattern) => normalized.includes(pattern));
 }
+const SUPPORTED_VIDEO_EXTENSIONS = ['mp4', '3gp', '3gpp'];
 const BUSINESS_NAME_KEYWORDS = [
     'srl',
     's.a',
@@ -780,6 +797,15 @@ const isLikelyPersonalName = (value) => {
         return false;
     }
     return true;
+};
+const canSendVideoAsset = (asset) => {
+    if (asset.type !== 'video') {
+        return true;
+    }
+    if (!asset.extension) {
+        return true;
+    }
+    return SUPPORTED_VIDEO_EXTENSIONS.includes(asset.extension.toLowerCase());
 };
 const notifyOperationsChannel = async (message, metadata) => {
     await (0, whatsappService_1.sendTextMessage)(env_1.env.operationsPhoneNumber, message);

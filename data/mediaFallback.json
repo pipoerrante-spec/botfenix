@@ -2,16 +2,19 @@
   {
     "type": "image",
     "url": "https://gpjkmdbccknfrvzhsoth.supabase.co/storage/v1/object/public/Imagenes/ojos1.jpg",
-    "caption": "Ojos LED vista 1"
+    "caption": "Ojos LED vista 1",
+    "extension": "jpg"
   },
   {
     "type": "image",
     "url": "https://gpjkmdbccknfrvzhsoth.supabase.co/storage/v1/object/public/Imagenes/ojos2.jpg",
-    "caption": "Ojos LED vista 2"
+    "caption": "Ojos LED vista 2",
+    "extension": "jpg"
   },
   {
     "type": "video",
     "url": "https://gpjkmdbccknfrvzhsoth.supabase.co/storage/v1/object/public/Imagenes/ojos.mov",
-    "caption": "Video demostrativo Ojos LED"
+    "caption": "Video demostrativo Ojos LED",
+    "extension": "mov"
   }
 ]

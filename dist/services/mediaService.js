@@ -99,7 +99,8 @@ const listProductMedia = async () => {
         const filePaths = await enumerateFiles(client, basePath);
         const assets = [];
         for (const filePath of filePaths) {
-            const [, ext = ''] = /\.([^.]+)$/.exec(filePath) ?? [];
+            const [, extRaw = ''] = /\.([^.]+)$/.exec(filePath) ?? [];
+            const ext = extRaw.toLowerCase();
             const type = resolveTypeFromExtension(ext);
             if (!type) {
                 continue;
@@ -112,6 +113,7 @@ const listProductMedia = async () => {
                 type,
                 url,
                 caption: buildCaption(filePath),
+                extension: ext,
             });
         }
         if (assets.length) {

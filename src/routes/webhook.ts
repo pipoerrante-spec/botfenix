@@ -6,7 +6,7 @@ import { getChatGPTReply } from '../services/openaiService';
 import { getProductInfo } from '../config/product';
 import { getBrandingConfig } from '../config/branding';
 import { logConversationMessage } from '../services/conversationLogService';
-import { listProductMedia } from '../services/mediaService';
+import { listProductMedia, MediaAsset } from '../services/mediaService';
 import { WhatsAppWebhookRequestBody, WhatsAppTextMessage, WhatsAppContact } from '../types/whatsapp';
 import { ensureLeadSession, saveLeadSession, findLeadSession } from '../services/leadSessionStore';
 import { LeadSession, LeadStage, OrderDraft, OrderField } from '../types/leadSession';
@@ -457,7 +457,9 @@ const recordBotMessage = (session: LeadSession, text: string): void => {
 };
 
 const extractNameFromMessage = (message: string): string | undefined => {
-  const explicit = message.match(/(?:soy|me llamo|mi nombre es)\s+([a-záéíóúüñ\s]+)/i);
+  const explicit = message.match(
+    /(?:soy|me llamo|mi nombre(?:s)? es|me llaman|me dicen|mi apodo es)\s*[:\-]?\s*([a-záéíóúüñ\s]+)/i,
+  );
   if (explicit?.[1]) {
     return capitalizeWords(explicit[1].trim());
   }
@@ -783,6 +785,23 @@ const shareProductMedia = async ({
 
   let sentAny = false;
   for (const asset of assets) {
+    if (asset.type === 'video' && !canSendVideoAsset(asset)) {
+      const linkMessage = `${asset.caption ?? 'Video demostrativo'}: ${asset.url}`;
+      await sendTextMessage(session.waId, linkMessage);
+      recordBotMessage(session, linkMessage);
+      sentAny = true;
+      await logConversationMessage({
+        conversationId: normalizedWaId,
+        channel: 'whatsapp',
+        direction: 'outgoing',
+        message: linkMessage,
+        phone: session.waId,
+        name: 'Asesor Fénix',
+        metadata: { stage: session.stage, mediaShared: true, fallbackLink: true },
+      });
+      continue;
+    }
+
     try {
       await sendMediaMessage({ to: session.waId, type: asset.type, link: asset.url, caption: asset.caption });
       sentAny = true;
@@ -828,6 +847,8 @@ function needsMediaResend(message: string): boolean {
   const resendClues = ['reenv', 'otra vez', 'no me lleg', 'no llegaron', 'no llegó', 'no recib'];
   return resendClues.some((pattern) => normalized.includes(pattern));
 }
+
+const SUPPORTED_VIDEO_EXTENSIONS = ['mp4', '3gp', '3gpp'];
 
 const BUSINESS_NAME_KEYWORDS = [
   'srl',
@@ -899,6 +920,18 @@ const isLikelyPersonalName = (value: string): boolean => {
   }
 
   return true;
+};
+
+const canSendVideoAsset = (asset: MediaAsset): boolean => {
+  if (asset.type !== 'video') {
+    return true;
+  }
+
+  if (!asset.extension) {
+    return true;
+  }
+
+  return SUPPORTED_VIDEO_EXTENSIONS.includes(asset.extension.toLowerCase());
 };
 
 const notifyOperationsChannel = async (message: string, metadata?: Record<string, unknown>): Promise<void> => {
