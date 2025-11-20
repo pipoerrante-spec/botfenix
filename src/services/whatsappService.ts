@@ -24,3 +24,27 @@ export const sendTextMessage = async (to: string, text: string): Promise<void> =
     throw error;
   }
 };
+
+interface MediaPayload {
+  to: string;
+  type: 'image' | 'video';
+  link: string;
+  caption?: string;
+}
+
+export const sendMediaMessage = async ({ to, type, link, caption }: MediaPayload): Promise<void> => {
+  try {
+    await whatsappClient.post('/messages', {
+      messaging_product: 'whatsapp',
+      to,
+      type,
+      [type]: {
+        link,
+        caption,
+      },
+    });
+  } catch (error) {
+    console.error('Error sending WhatsApp media', error);
+    throw error;
+  }
+};

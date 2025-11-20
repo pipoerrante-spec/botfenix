@@ -13,6 +13,7 @@ export interface Env {
   openAiApiKey: string;
   operationsPhoneNumber: string;
   supabase?: SupabaseConfig | null;
+  supabaseMediaBucket?: string | null;
 }
 
 const required = (key: string): string => {
@@ -42,6 +43,11 @@ const resolveSupabaseConfig = (): SupabaseConfig | null => {
   return { url, serviceRoleKey };
 };
 
+const resolveMediaBucket = (): string | null => {
+  const value = process.env.PRODUCT_MEDIA_BUCKET;
+  return value ?? null;
+};
+
 export const env: Env = {
   port: normalizePort(process.env.PORT),
   metaVerifyToken: required('META_VERIFY_TOKEN'),
@@ -50,4 +56,5 @@ export const env: Env = {
   openAiApiKey: required('OPENAI_API_KEY'),
   operationsPhoneNumber: required('OPERATIONS_PHONE_NUMBER'),
   supabase: resolveSupabaseConfig(),
+  supabaseMediaBucket: resolveMediaBucket(),
 };

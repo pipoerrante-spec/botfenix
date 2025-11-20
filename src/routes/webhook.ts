@@ -1,13 +1,23 @@
 import { Router, Request, Response } from 'express';
+import { DateTime } from 'luxon';
 import { env } from '../config/env';
-import { sendTextMessage } from '../services/whatsappService';
+import { sendTextMessage, sendMediaMessage } from '../services/whatsappService';
 import { getChatGPTReply } from '../services/openaiService';
 import { getProductInfo } from '../config/product';
 import { getBrandingConfig } from '../config/branding';
 import { logConversationMessage } from '../services/conversationLogService';
+import { listProductMedia } from '../services/mediaService';
 import { WhatsAppWebhookRequestBody, WhatsAppTextMessage, WhatsAppContact } from '../types/whatsapp';
 
 const router = Router();
+
+const LA_PAZ_ZONE = 'America/La_Paz';
+const DELIVERY_START_HOUR = 9;
+const DELIVERY_CUTOFF_HOUR = 17;
+const PREPARATION_HOURS = 2;
+const DELIVERY_WINDOW_HOURS = 2;
+const SUPPORTED_CITIES = ['cochabamba', 'la paz', 'el alto', 'santa cruz', 'sucre'];
+const MEDIA_KEYWORDS = ['foto', 'imagen', 'video', 'demo', 'mostrar', 'ver', 'clip'];
 
 type LeadStage =
   | 'nuevo'
@@ -40,16 +50,18 @@ interface LeadSession {
   history: string[];
   name?: string;
   city?: string;
+  cityAllowed?: boolean;
   interests?: string[];
   pendingFields: OrderField[];
   order?: OrderDraft;
+  mediaShared?: boolean;
 }
 
 const leadSessions = new Map<string, LeadSession>();
 
 const ORDER_FIELD_LABELS: Record<OrderField, string> = {
   quantity: 'la cantidad exacta que desea',
-  deliveryTime: 'la hora o fecha que prefiere para recibirlo',
+  deliveryTime: 'una ventana de 2 horas (ej. entre 10:00 y 12:00) para la entrega',
   address: 'la dirección o ubicación precisa de entrega',
 };
 
@@ -85,6 +97,8 @@ export const handleIncomingMessage = async ({
   if (!cleanText) {
     return;
   }
+
+  const laPazNow = getLaPazNow();
 
   const session = ensureSession(waId, normalizedWaId, profileName);
   session.history.push(`Cliente (${new Date().toISOString()}): ${cleanText}`);
@@ -127,7 +141,23 @@ export const handleIncomingMessage = async ({
     const city = extractCityFromMessage(cleanText);
     if (city) {
       session.city = city;
-      session.stage = 'chatting';
+      session.cityAllowed = isCitySupported(city);
+      if (session.cityAllowed === false) {
+        const coverageList = formatCoverageList();
+        const notice = `Por ahora realizamos entregas en ${coverageList}. ¿Puedes compartir una dirección dentro de esas ciudades?`;
+        await sendTextMessage(session.waId, notice);
+        recordBotMessage(session, notice);
+        await logConversationMessage({
+          conversationId: normalizedWaId,
+          channel: 'whatsapp',
+          direction: 'outgoing',
+          message: notice,
+          phone: session.waId,
+          name: 'Asesor Fénix',
+          metadata: { stage: session.stage },
+        });
+      }
+      session.stage = session.cityAllowed === false ? 'awaiting_city' : 'chatting';
     }
   }
 
@@ -137,14 +167,14 @@ export const handleIncomingMessage = async ({
     session.stage = 'chatting';
   }
 
-  if (session.stage === 'chatting' && shouldStartOrderFlow(cleanText)) {
+  if (session.stage === 'chatting' && session.cityAllowed !== false && shouldStartOrderFlow(cleanText)) {
     startOrderFlow(session);
   }
 
   if (session.stage === 'collecting_order') {
     const captureResult = captureOrderField(session, cleanText);
     if (captureResult === 'awaiting_confirmation') {
-      await sendOrderSummary(session);
+      await sendOrderSummary(session, laPazNow);
       return;
     }
   }
@@ -166,6 +196,8 @@ export const handleIncomingMessage = async ({
     pendingField = 'tu nombre para personalizar la atención';
   } else if (!session.city) {
     pendingField = 'la ciudad donde te encuentras para coordinar entrega';
+  } else if (session.cityAllowed === false) {
+    pendingField = `una ciudad dentro de nuestra cobertura (${formatCoverageList()})`;
   } else if (session.pendingFields[0]) {
     pendingField = ORDER_FIELD_LABELS[session.pendingFields[0]];
   }
@@ -174,7 +206,11 @@ export const handleIncomingMessage = async ({
     `Etapa: ${session.stage}`,
     `Nombre cliente: ${session.name ?? 'desconocido'}`,
     `Ciudad cliente: ${session.city ?? 'sin definir'}`,
+    `Hora local (Bolivia): ${laPazNow.setLocale('es').toFormat('EEEE dd HH:mm')}`,
   ];
+  if (session.cityAllowed === false) {
+    contextParts.push(`El cliente está fuera de cobertura (permitidas: ${formatCoverageList()})`);
+  }
   if (session.interests?.length) {
     contextParts.push(`Intereses mencionados: ${session.interests.join(', ')}`);
   }
@@ -208,6 +244,31 @@ export const handleIncomingMessage = async ({
       name: 'Asesor Fénix',
       metadata: { stage: session.stage },
     });
+
+    const wantsMedia = shouldShareMedia(cleanText) || isProductInterest(cleanText);
+    if (wantsMedia && !session.mediaShared) {
+      const assets = await listProductMedia();
+      if (assets.length) {
+        session.mediaShared = true;
+        const intro = 'Te comparto fotos y videos del producto para que lo veas mejor 👇';
+        await sendTextMessage(session.waId, intro);
+        recordBotMessage(session, intro);
+        await logConversationMessage({
+          conversationId: normalizedWaId,
+          channel: 'whatsapp',
+          direction: 'outgoing',
+          message: intro,
+          phone: session.waId,
+          name: 'Asesor Fénix',
+          metadata: { stage: session.stage },
+        });
+
+        for (const asset of assets) {
+          await sendMediaMessage({ to: session.waId, type: asset.type, link: asset.url, caption: asset.caption });
+          recordBotMessage(session, `[Media ${asset.type}] ${asset.caption ?? asset.url}`);
+        }
+      }
+    }
   } catch (error) {
     console.error('Error al procesar la respuesta de OpenAI', error);
   }
@@ -299,6 +360,7 @@ const handleOperationsControlMessage = async (rawText: string): Promise<void> =>
       session.stage = 'scheduled';
       const message = `¡Listo ${session.name ?? ''}! Tu pedido quedó agendado para ${slot}. Te avisaré cuando salga a ruta.`;
       await sendTextMessage(session.waId, message);
+      recordBotMessage(session, message);
       await logConversationMessage({
         conversationId: session.normalizedWaId,
         channel: 'whatsapp',
@@ -317,10 +379,9 @@ const handleOperationsControlMessage = async (rawText: string): Promise<void> =>
     case 'PEDIDO_ENTREGADO': {
       session.order.status = 'delivered';
       session.stage = 'delivered';
-      await sendTextMessage(
-        session.waId,
-        `Hola ${session.name ?? ''}, nuestro equipo confirma que tu pedido fue entregado. ¿Todo llegó bien?`,
-      );
+      const deliveredMessage = `Hola ${session.name ?? ''}, nuestro equipo confirma que tu pedido fue entregado. ¿Todo llegó bien?`;
+      await sendTextMessage(session.waId, deliveredMessage);
+      recordBotMessage(session, deliveredMessage);
       await logConversationMessage({
         conversationId: session.normalizedWaId,
         channel: 'whatsapp',
@@ -350,6 +411,7 @@ const ensureSession = (waId: string, normalizedWaId: string, profileName?: strin
       stage: 'nuevo',
       history: [],
       pendingFields: [],
+      mediaShared: false,
     };
     leadSessions.set(normalizedWaId, session);
   }
@@ -360,6 +422,54 @@ const ensureSession = (waId: string, normalizedWaId: string, profileName?: strin
   }
 
   return session;
+};
+
+const shouldShareMedia = (message: string): boolean => {
+  const normalized = message.toLowerCase();
+  return MEDIA_KEYWORDS.some((keyword) => normalized.includes(keyword));
+};
+
+const isProductInterest = (message: string): boolean => {
+  const normalized = message.toLowerCase();
+  return normalized.includes('producto') || normalized.includes('información') || normalized.includes('info');
+};
+
+const isCitySupported = (city?: string): boolean => {
+  if (!city) {
+    return false;
+  }
+  return SUPPORTED_CITIES.includes(city.toLowerCase());
+};
+
+const formatCoverageList = (): string => SUPPORTED_CITIES.map((city) => capitalizeWords(city)).join(', ');
+
+const getLaPazNow = (): DateTime => DateTime.now().setZone(LA_PAZ_ZONE);
+
+const calculateDeliverySlot = (reference?: DateTime): { start: DateTime; end: DateTime; label: string } => {
+  const base = (reference ?? getLaPazNow()).setZone(LA_PAZ_ZONE);
+  const earliestStartToday = base.set({ hour: DELIVERY_START_HOUR, minute: 0, second: 0, millisecond: 0 });
+  const cutoffToday = base.set({ hour: DELIVERY_CUTOFF_HOUR, minute: 0, second: 0, millisecond: 0 });
+
+  let start = base.plus({ hours: PREPARATION_HOURS });
+  if (start < earliestStartToday) {
+    start = earliestStartToday;
+  }
+  if (start > cutoffToday) {
+    start = earliestStartToday.plus({ days: 1 });
+  }
+
+  const end = start.plus({ hours: DELIVERY_WINDOW_HOURS });
+  const dayLabel = start.hasSame(base, 'day')
+    ? 'hoy'
+    : start.hasSame(base.plus({ days: 1 }), 'day')
+      ? 'mañana'
+      : start.setLocale('es').toFormat('cccc dd');
+
+  const label = `entre ${start.setLocale('es').toFormat('HH:mm')} y ${end
+    .setLocale('es')
+    .toFormat('HH:mm')} ${dayLabel}`;
+
+  return { start, end, label };
 };
 
 const recordBotMessage = (session: LeadSession, text: string): void => {
@@ -392,6 +502,7 @@ const updateSessionInsights = (session: LeadSession, message: string): void => {
   const cityMatch = message.match(/(?:soy de|estoy en|en la ciudad de|ciudad\s*)([a-záéíóúüñ\s]+)/i);
   if (cityMatch && !session.city) {
     session.city = capitalizeWords(cityMatch[1].trim());
+    session.cityAllowed = isCitySupported(session.city);
   }
 
   const interestKeywords = ['tenis', 'zapatos', 'running', 'bolsa', 'gym', 'atleta'];
@@ -489,17 +600,20 @@ const determineMissingFields = (order?: OrderDraft): OrderField[] => {
   return fields;
 };
 
-const sendOrderSummary = async (session: LeadSession): Promise<void> => {
+const sendOrderSummary = async (session: LeadSession, laPazNow: DateTime): Promise<void> => {
   if (!session.order) {
     return;
   }
 
   const quantity = session.order.quantity ?? 1;
   const total = quantity * session.order.price;
-  const summary = `Perfecto ${session.name ?? ''}. Tengo tu pedido: ${quantity} x ${session.order.productName} (${session.order.currency} ${session.order.price} c/u, total ${session.order.currency} ${total}). Entrega solicitada: ${session.order.requestedTime ?? 'horario pendiente'}. Dirección: ${session.order.address ?? 'por confirmar'}. ¿Confirmamos para agendarlo?`;
+  const slot = calculateDeliverySlot(laPazNow);
+  session.order.confirmedSlot = slot.label;
+  const summary = `Perfecto ${session.name ?? ''}! Tengo tu pedido: ${quantity} x ${session.order.productName} (${session.order.currency} ${session.order.price} c/u, total ${session.order.currency} ${total}). Podemos entregar ${slot.label}. Dirección registrada: ${session.order.address ?? 'por confirmar'}. ¿Confirmamos para agendarlo?`;
 
   session.stage = 'awaiting_confirmation';
   await sendTextMessage(session.waId, summary);
+  recordBotMessage(session, summary);
   await logConversationMessage({
     conversationId: session.normalizedWaId,
     channel: 'whatsapp',
@@ -519,8 +633,10 @@ const confirmOrderWithOperations = async (session: LeadSession): Promise<void> =
   session.order.status = 'pending_ops';
   session.stage = 'pending_ops';
 
-  const ackMessage = `Gracias ${session.name ?? ''}. Estoy avisando al equipo para agendar tu pedido. En cuanto me confirmen la hora, te escribo.`;
+  const slotLabel = session.order.confirmedSlot ?? calculateDeliverySlot().label;
+  const ackMessage = `Gracias ${session.name ?? ''}. Estoy avisando al equipo para agendar tu pedido ${slotLabel}. En cuanto me confirmen la hora exacta, te escribo.`;
   await sendTextMessage(session.waId, ackMessage);
+  recordBotMessage(session, ackMessage);
   await logConversationMessage({
     conversationId: session.normalizedWaId,
     channel: 'whatsapp',
@@ -543,7 +659,7 @@ const buildOperationsMessage = (session: LeadSession): string => {
     `Ciudad: ${session.city ?? 'N/D'}`,
     `Producto: ${order.quantity ?? '1'} x ${order.productName}`,
     `Precio unitario: ${order.currency} ${order.price}`,
-    `Entrega solicitada: ${order.requestedTime ?? 'Por confirmar'}`,
+    `Ventana estimada: ${order.confirmedSlot ?? order.requestedTime ?? 'Por confirmar'}`,
     `Dirección: ${order.address ?? 'Pendiente'}`,
     '',
     `Responder con:`,
@@ -562,13 +678,14 @@ const buildContextNotes = (session: LeadSession): string[] => {
     notes.push(
       `Pedido -> ${order.quantity ?? '?'} x ${order.productName} (${order.currency} ${order.price}) | Estado: ${order.status} | Hora solicitada: ${order.requestedTime ?? 'pendiente'}`,
     );
+    if (order.confirmedSlot) {
+      notes.push(`Ventana confirmada: ${order.confirmedSlot}`);
+    }
     if (order.address) {
       notes.push(`Dirección confirmada: ${order.address}`);
     }
-    if (order.confirmedSlot) {
-      notes.push(`Horario confirmado por operaciones: ${order.confirmedSlot}`);
-    }
   }
+  notes.push(`Media compartida: ${session.mediaShared ? 'sí' : 'no'}`);
   return notes;
 };
 
@@ -600,17 +717,35 @@ const detectQuantity = (message: string): number | undefined => {
 };
 
 const extractDeliveryWindow = (message: string): string | undefined => {
-  const timeMatch = message.match(/(\d{1,2}(?::\d{2})?\s?(?:am|pm)?)/i);
+  const timeMatch = message.match(/(\d{1,2})(?::(\d{2}))?\s*(am|pm)?/i);
   if (timeMatch) {
-    return timeMatch[0];
+    let hour = parseInt(timeMatch[1], 10);
+    const minute = timeMatch[2] ? parseInt(timeMatch[2], 10) : 0;
+    const suffix = timeMatch[3]?.toLowerCase();
+    if (suffix === 'pm' && hour < 12) {
+      hour += 12;
+    }
+    if (suffix === 'am' && hour === 12) {
+      hour = 0;
+    }
+
+    let start = getLaPazNow().set({ hour, minute, second: 0, millisecond: 0 });
+    if (start < getLaPazNow().plus({ minutes: 30 })) {
+      start = start.plus({ days: 1 });
+    }
+    const end = start.plus({ hours: DELIVERY_WINDOW_HOURS });
+    return `entre ${start.setLocale('es').toFormat('HH:mm')} y ${end.setLocale('es').toFormat('HH:mm')}`;
   }
+
   const dayMatch = message.match(/hoy|mañana|tarde|noche|fin de semana/i);
   if (dayMatch) {
     return capitalizeWords(dayMatch[0]);
   }
+
   if (message.length <= 60) {
     return message.trim();
   }
+
   return undefined;
 };
 

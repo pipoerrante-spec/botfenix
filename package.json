@@ -13,10 +13,12 @@
     "axios": "^1.13.2",
     "dotenv": "^17.2.3",
     "express": "^5.1.0",
+    "luxon": "^3.7.2",
     "openai": "^4.77.4"
   },
   "devDependencies": {
     "@types/express": "^5.0.5",
+    "@types/luxon": "^3.7.1",
     "@types/node": "^20.19.25",
     "@vercel/node": "^5.5.8",
     "ts-node-dev": "^2.0.0",

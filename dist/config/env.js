@@ -24,6 +24,10 @@ const resolveSupabaseConfig = () => {
     }
     return { url, serviceRoleKey };
 };
+const resolveMediaBucket = () => {
+    const value = process.env.PRODUCT_MEDIA_BUCKET;
+    return value ?? null;
+};
 exports.env = {
     port: normalizePort(process.env.PORT),
     metaVerifyToken: required('META_VERIFY_TOKEN'),
@@ -32,4 +36,5 @@ exports.env = {
     openAiApiKey: required('OPENAI_API_KEY'),
     operationsPhoneNumber: required('OPERATIONS_PHONE_NUMBER'),
     supabase: resolveSupabaseConfig(),
+    supabaseMediaBucket: resolveMediaBucket(),
 };
