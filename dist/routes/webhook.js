@@ -56,20 +56,50 @@ const handleIncomingMessage = async ({ waId, normalizedWaId, profileName, text, 
     });
     try {
         if (session.stage === 'nuevo') {
-            const welcome = getWelcomeMessage();
-            await (0, whatsappService_1.sendTextMessage)(session.waId, welcome);
-            session.stage = 'chatting';
-            recordBotMessage(session, welcome);
-            await (0, conversationLogService_1.logConversationMessage)({
-                conversationId: normalizedWaId,
-                channel: 'whatsapp',
-                direction: 'outgoing',
-                message: welcome,
-                phone: session.waId,
-                name: 'Asesor Fénix',
-                metadata: { stage: session.stage },
-            });
-            await sendProductIntro(session, normalizedWaId);
+            if (session.name) {
+                session.stage = 'chatting';
+                await sendProductIntro(session, normalizedWaId, { includeWelcome: true, personalize: true });
+            }
+            else {
+                session.stage = 'awaiting_name';
+                const welcome = '¡Hola! Soy Asesor Fénix 👋 ¿Con quién tengo el gusto?';
+                await (0, whatsappService_1.sendTextMessage)(session.waId, welcome);
+                recordBotMessage(session, welcome);
+                await (0, conversationLogService_1.logConversationMessage)({
+                    conversationId: normalizedWaId,
+                    channel: 'whatsapp',
+                    direction: 'outgoing',
+                    message: welcome,
+                    phone: session.waId,
+                    name: 'Asesor Fénix',
+                    metadata: { stage: session.stage },
+                });
+            }
+            return;
+        }
+        if (session.stage === 'awaiting_name' && !session.name) {
+            const explicitName = extractNameFromMessage(cleanText);
+            if (explicitName) {
+                session.name = explicitName;
+                session.stage = 'chatting';
+                await sendProductIntro(session, normalizedWaId, { personalize: true });
+            }
+            else {
+                const reminder = 'Genial, solo dime tu nombre para personalizar la atención 😊';
+                await (0, whatsappService_1.sendTextMessage)(session.waId, reminder);
+                recordBotMessage(session, reminder);
+                await (0, conversationLogService_1.logConversationMessage)({
+                    conversationId: normalizedWaId,
+                    channel: 'whatsapp',
+                    direction: 'outgoing',
+                    message: reminder,
+                    phone: session.waId,
+                    name: 'Asesor Fénix',
+                    metadata: { stage: session.stage },
+                });
+                return;
+            }
+            return;
         }
         if (!session.name) {
             const explicitName = extractNameFromMessage(cleanText);
@@ -90,12 +120,13 @@ const handleIncomingMessage = async ({ waId, normalizedWaId, profileName, text, 
             await sendProductIntro(session, normalizedWaId);
         }
         const askedForMedia = shouldShareMedia(cleanText) || isProductInterest(cleanText);
-        const wantsMedia = askedForMedia && (!session.mediaShared || needsMediaResend(cleanText) || session.stage === 'awaiting_confirmation');
+        const resendRequested = session.mediaShared && needsMediaResend(cleanText);
+        const wantsMedia = askedForMedia && (!session.mediaShared || resendRequested || session.stage === 'awaiting_confirmation');
         if (wantsMedia) {
             await shareProductMedia({
                 session,
                 normalizedWaId,
-                isResend: session.mediaShared || needsMediaResend(cleanText),
+                isResend: resendRequested,
             });
         }
         if (session.stage === 'chatting' && session.cityAllowed !== false && shouldStartOrderFlow(cleanText)) {
@@ -119,7 +150,10 @@ const handleIncomingMessage = async ({ waId, normalizedWaId, profileName, text, 
             }
         }
         let pendingField;
-        if (session.cityAllowed === false) {
+        if (!session.name) {
+            pendingField = 'tu nombre para personalizar la atención';
+        }
+        else if (session.cityAllowed === false) {
             pendingField = `una ciudad dentro de nuestra cobertura (${formatCoverageList()})`;
         }
         else if ((session.stage === 'collecting_order' || session.stage === 'awaiting_confirmation') && !session.city) {
@@ -519,25 +553,39 @@ const buildContextNotes = (session) => {
     notes.push(`Media compartida: ${session.mediaShared ? 'sí' : 'no'}`);
     return notes;
 };
-const sendProductIntro = async (session, normalizedWaId) => {
+const sendProductIntro = async (session, normalizedWaId, options) => {
     if (session.introducedProduct) {
         return;
     }
+    const includeWelcome = options?.includeWelcome ?? false;
+    const personalize = options?.personalize ?? false;
     const product = (0, product_1.getProductInfo)();
-    const topHighlights = product.highlights.slice(0, 2).join('. ');
-    const intro = `Tenemos disponibles los ${product.name} por ${product.currency} ${product.price}. ${product.shortDescription}. Destacan por: ${topHighlights}. ¿Quieres verlos en acción o saber cómo se instalan?`;
-    await (0, whatsappService_1.sendTextMessage)(session.waId, intro);
-    recordBotMessage(session, intro);
+    const greeting = includeWelcome ? 'Hola, soy Asesor Fénix 😊' : undefined;
+    const nameHook = personalize && session.name ? `Gracias, ${session.name}.` : undefined;
+    const priceLine = `Tengo los ${product.name} en ${product.currency} ${product.price}.`;
+    const highlight = product.highlights[0] ?? product.shortDescription;
+    const hook = `Son ideales porque ${highlight.toLowerCase()}. ¿Prefieres que te envíe fotos y video o te cuento cómo se instalan y los tiempos?`;
+    const parts = [greeting, nameHook, priceLine, hook].filter(Boolean);
+    const introMessage = parts.join(' ');
+    await (0, whatsappService_1.sendTextMessage)(session.waId, introMessage);
+    recordBotMessage(session, introMessage);
     await (0, conversationLogService_1.logConversationMessage)({
         conversationId: normalizedWaId,
         channel: 'whatsapp',
         direction: 'outgoing',
-        message: intro,
+        message: introMessage,
         phone: session.waId,
         name: 'Asesor Fénix',
         metadata: { stage: session.stage, intro: true },
     });
     session.introducedProduct = true;
+    if (!session.mediaShared) {
+        await shareProductMedia({
+            session,
+            normalizedWaId,
+            introMessage: 'Te dejo fotos y un video para que veas cómo lucen en el parabrisas 👇',
+        });
+    }
 };
 const maybeHandleCoverageNotice = async (session, normalizedWaId) => {
     if (session.city && session.cityAllowed === false && !session.cityNoticeSent) {
@@ -557,7 +605,7 @@ const maybeHandleCoverageNotice = async (session, normalizedWaId) => {
         session.cityNoticeSent = true;
     }
 };
-const shareProductMedia = async ({ session, normalizedWaId, isResend, }) => {
+const shareProductMedia = async ({ session, normalizedWaId, isResend, introMessage, }) => {
     const assets = await (0, mediaService_1.listProductMedia)();
     if (!assets.length) {
         const fallback = 'Aún no tengo archivos listos para compartir en este momento, pero ya pedí al equipo que los habilite y te aviso apenas estén disponibles.';
@@ -574,9 +622,11 @@ const shareProductMedia = async ({ session, normalizedWaId, isResend, }) => {
         });
         return;
     }
-    const intro = isResend
-        ? 'Reenviando las fotos del producto para que las tengas a mano 👇'
-        : 'Te comparto fotos y videos del producto para que lo veas mejor 👇';
+    const intro = introMessage
+        ? introMessage
+        : isResend
+            ? 'Reenviando las fotos del producto para que las tengas a mano 👇'
+            : 'Te comparto fotos y videos del producto para que lo veas mejor 👇';
     await (0, whatsappService_1.sendTextMessage)(session.waId, intro);
     recordBotMessage(session, intro);
     await (0, conversationLogService_1.logConversationMessage)({

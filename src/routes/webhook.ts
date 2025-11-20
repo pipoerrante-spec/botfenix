@@ -77,20 +77,49 @@ export const handleIncomingMessage = async ({
 
   try {
     if (session.stage === 'nuevo') {
-      const welcome = getWelcomeMessage();
-      await sendTextMessage(session.waId, welcome);
-      session.stage = 'chatting';
-      recordBotMessage(session, welcome);
-      await logConversationMessage({
-        conversationId: normalizedWaId,
-        channel: 'whatsapp',
-        direction: 'outgoing',
-        message: welcome,
-        phone: session.waId,
-        name: 'Asesor Fénix',
-        metadata: { stage: session.stage },
-      });
-      await sendProductIntro(session, normalizedWaId);
+      if (session.name) {
+        session.stage = 'chatting';
+        await sendProductIntro(session, normalizedWaId, { includeWelcome: true, personalize: true });
+      } else {
+        session.stage = 'awaiting_name';
+        const welcome = '¡Hola! Soy Asesor Fénix 👋 ¿Con quién tengo el gusto?';
+        await sendTextMessage(session.waId, welcome);
+        recordBotMessage(session, welcome);
+        await logConversationMessage({
+          conversationId: normalizedWaId,
+          channel: 'whatsapp',
+          direction: 'outgoing',
+          message: welcome,
+          phone: session.waId,
+          name: 'Asesor Fénix',
+          metadata: { stage: session.stage },
+        });
+      }
+      return;
+    }
+
+    if (session.stage === 'awaiting_name' && !session.name) {
+      const explicitName = extractNameFromMessage(cleanText);
+      if (explicitName) {
+        session.name = explicitName;
+        session.stage = 'chatting';
+        await sendProductIntro(session, normalizedWaId, { personalize: true });
+      } else {
+        const reminder = 'Genial, solo dime tu nombre para personalizar la atención 😊';
+        await sendTextMessage(session.waId, reminder);
+        recordBotMessage(session, reminder);
+        await logConversationMessage({
+          conversationId: normalizedWaId,
+          channel: 'whatsapp',
+          direction: 'outgoing',
+          message: reminder,
+          phone: session.waId,
+          name: 'Asesor Fénix',
+          metadata: { stage: session.stage },
+        });
+        return;
+      }
+      return;
     }
 
     if (!session.name) {
@@ -117,13 +146,13 @@ export const handleIncomingMessage = async ({
     }
 
     const askedForMedia = shouldShareMedia(cleanText) || isProductInterest(cleanText);
-    const wantsMedia =
-      askedForMedia && (!session.mediaShared || needsMediaResend(cleanText) || session.stage === 'awaiting_confirmation');
+    const resendRequested = session.mediaShared && needsMediaResend(cleanText);
+    const wantsMedia = askedForMedia && (!session.mediaShared || resendRequested || session.stage === 'awaiting_confirmation');
     if (wantsMedia) {
       await shareProductMedia({
         session,
         normalizedWaId,
-        isResend: session.mediaShared || needsMediaResend(cleanText),
+        isResend: resendRequested,
       });
     }
 
@@ -152,7 +181,9 @@ export const handleIncomingMessage = async ({
     }
 
     let pendingField: string | undefined;
-    if (session.cityAllowed === false) {
+    if (!session.name) {
+      pendingField = 'tu nombre para personalizar la atención';
+    } else if (session.cityAllowed === false) {
       pendingField = `una ciudad dentro de nuestra cobertura (${formatCoverageList()})`;
     } else if ((session.stage === 'collecting_order' || session.stage === 'awaiting_confirmation') && !session.city) {
       pendingField = 'el enlace de ubicación (sin compartir ubicación en vivo) o la ciudad exacta para coordinar la entrega';
@@ -608,28 +639,47 @@ const buildContextNotes = (session: LeadSession): string[] => {
   return notes;
 };
 
-const sendProductIntro = async (session: LeadSession, normalizedWaId: string): Promise<void> => {
+const sendProductIntro = async (
+  session: LeadSession,
+  normalizedWaId: string,
+  options?: { includeWelcome?: boolean; personalize?: boolean },
+): Promise<void> => {
   if (session.introducedProduct) {
     return;
   }
 
-  const product = getProductInfo();
-  const topHighlights = product.highlights.slice(0, 2).join('. ');
-  const intro = `Tenemos disponibles los ${product.name} por ${product.currency} ${product.price}. ${product.shortDescription}. Destacan por: ${topHighlights}. ¿Quieres verlos en acción o saber cómo se instalan?`;
+  const includeWelcome = options?.includeWelcome ?? false;
+  const personalize = options?.personalize ?? false;
 
-  await sendTextMessage(session.waId, intro);
-  recordBotMessage(session, intro);
+  const product = getProductInfo();
+  const greeting = includeWelcome ? 'Hola, soy Asesor Fénix 😊' : undefined;
+  const nameHook = personalize && session.name ? `Gracias, ${session.name}.` : undefined;
+  const priceLine = `Tengo los ${product.name} en ${product.currency} ${product.price}.`;
+  const highlight = product.highlights[0] ?? product.shortDescription;
+  const hook = `Son ideales porque ${highlight.toLowerCase()}. ¿Prefieres que te envíe fotos y video o te cuento cómo se instalan y los tiempos?`;
+  const parts = [greeting, nameHook, priceLine, hook].filter(Boolean);
+  const introMessage = parts.join(' ');
+
+  await sendTextMessage(session.waId, introMessage);
+  recordBotMessage(session, introMessage);
   await logConversationMessage({
     conversationId: normalizedWaId,
     channel: 'whatsapp',
     direction: 'outgoing',
-    message: intro,
+    message: introMessage,
     phone: session.waId,
     name: 'Asesor Fénix',
     metadata: { stage: session.stage, intro: true },
   });
 
   session.introducedProduct = true;
+  if (!session.mediaShared) {
+    await shareProductMedia({
+      session,
+      normalizedWaId,
+      introMessage: 'Te dejo fotos y un video para que veas cómo lucen en el parabrisas 👇',
+    });
+  }
 };
 
 const maybeHandleCoverageNotice = async (session: LeadSession, normalizedWaId: string): Promise<void> => {
@@ -655,10 +705,12 @@ const shareProductMedia = async ({
   session,
   normalizedWaId,
   isResend,
+  introMessage,
 }: {
   session: LeadSession;
   normalizedWaId: string;
   isResend?: boolean;
+  introMessage?: string;
 }): Promise<void> => {
   const assets = await listProductMedia();
   if (!assets.length) {
@@ -678,9 +730,11 @@ const shareProductMedia = async ({
     return;
   }
 
-  const intro = isResend
-    ? 'Reenviando las fotos del producto para que las tengas a mano 👇'
-    : 'Te comparto fotos y videos del producto para que lo veas mejor 👇';
+  const intro = introMessage
+    ? introMessage
+    : isResend
+      ? 'Reenviando las fotos del producto para que las tengas a mano 👇'
+      : 'Te comparto fotos y videos del producto para que lo veas mejor 👇';
   await sendTextMessage(session.waId, intro);
   recordBotMessage(session, intro);
   await logConversationMessage({
