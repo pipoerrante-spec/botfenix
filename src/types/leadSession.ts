@@ -28,6 +28,7 @@ export interface LeadSession {
   stage: LeadStage;
   history: string[];
   name?: string;
+  nameConfirmed?: boolean;
   city?: string;
   cityAllowed?: boolean;
   cityNoticeSent?: boolean;

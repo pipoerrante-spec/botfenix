@@ -75,9 +75,13 @@ export const handleIncomingMessage = async ({
     metadata: { stage: session.stage },
   });
 
+  if (session.name && !session.nameConfirmed) {
+    session.nameConfirmed = isLikelyPersonalName(session.name);
+  }
+
   try {
     if (session.stage === 'nuevo') {
-      if (session.name) {
+      if (session.nameConfirmed) {
         session.stage = 'chatting';
         await sendProductIntro(session, normalizedWaId, { includeWelcome: true, personalize: true });
       } else {
@@ -98,14 +102,31 @@ export const handleIncomingMessage = async ({
       return;
     }
 
-    if (session.stage === 'awaiting_name' && !session.name) {
+    if (session.stage === 'awaiting_name' && !session.nameConfirmed) {
       const explicitName = extractNameFromMessage(cleanText);
       if (explicitName) {
         session.name = explicitName;
-        session.stage = 'chatting';
-        await sendProductIntro(session, normalizedWaId, { personalize: true });
+        session.nameConfirmed = isLikelyPersonalName(explicitName);
+        if (session.nameConfirmed) {
+          session.stage = 'chatting';
+          await sendProductIntro(session, normalizedWaId, { personalize: true });
+          return;
+        }
+        const clarify = 'Gracias. ¿Me compartes el nombre de la persona que coordina (no el de la empresa)?';
+        await sendTextMessage(session.waId, clarify);
+        recordBotMessage(session, clarify);
+        await logConversationMessage({
+          conversationId: normalizedWaId,
+          channel: 'whatsapp',
+          direction: 'outgoing',
+          message: clarify,
+          phone: session.waId,
+          name: 'Asesor Fénix',
+          metadata: { stage: session.stage },
+        });
+        return;
       } else {
-        const reminder = 'Genial, solo dime tu nombre para personalizar la atención 😊';
+        const reminder = 'Solo necesito tu nombre para personalizar la atención 😊';
         await sendTextMessage(session.waId, reminder);
         recordBotMessage(session, reminder);
         await logConversationMessage({
@@ -119,14 +140,23 @@ export const handleIncomingMessage = async ({
         });
         return;
       }
-      return;
     }
 
-    if (!session.name) {
-      const explicitName = extractNameFromMessage(cleanText);
-      if (explicitName) {
-        session.name = explicitName;
-      }
+    if (!session.nameConfirmed) {
+      session.stage = 'awaiting_name';
+      const prompt = 'Para ayudarte mejor necesito tu nombre real 😊';
+      await sendTextMessage(session.waId, prompt);
+      recordBotMessage(session, prompt);
+      await logConversationMessage({
+        conversationId: normalizedWaId,
+        channel: 'whatsapp',
+        direction: 'outgoing',
+        message: prompt,
+        phone: session.waId,
+        name: 'Asesor Fénix',
+        metadata: { stage: session.stage },
+      });
+      return;
     }
 
     if (!session.city) {
@@ -142,7 +172,7 @@ export const handleIncomingMessage = async ({
     await maybeHandleCoverageNotice(session, normalizedWaId);
 
     if (!session.introducedProduct) {
-      await sendProductIntro(session, normalizedWaId);
+      await sendProductIntro(session, normalizedWaId, { personalize: session.nameConfirmed });
     }
 
     const askedForMedia = shouldShareMedia(cleanText) || isProductInterest(cleanText);
@@ -181,7 +211,7 @@ export const handleIncomingMessage = async ({
     }
 
     let pendingField: string | undefined;
-    if (!session.name) {
+    if (!session.nameConfirmed) {
       pendingField = 'tu nombre para personalizar la atención';
     } else if (session.cityAllowed === false) {
       pendingField = `una ciudad dentro de nuestra cobertura (${formatCoverageList()})`;
@@ -193,7 +223,7 @@ export const handleIncomingMessage = async ({
 
     const contextParts = [
       `Etapa: ${session.stage}`,
-      `Nombre cliente: ${session.name ?? 'desconocido'}`,
+      `Nombre cliente: ${session.nameConfirmed ? session.name : 'desconocido'}`,
       `Ciudad cliente: ${session.city ?? 'sin definir'}`,
       `Hora local (Bolivia): ${laPazNow.setLocale('es').toFormat('EEEE dd HH:mm')}`,
     ];
@@ -214,7 +244,7 @@ export const handleIncomingMessage = async ({
 
     try {
       const aiReply = await getChatGPTReply(aiInput, {
-        name: session.name,
+        name: session.nameConfirmed ? session.name : undefined,
         city: session.city,
         phone: session.waId,
         stage: session.stage,
@@ -652,13 +682,17 @@ const sendProductIntro = async (
   const personalize = options?.personalize ?? false;
 
   const product = getProductInfo();
-  const greeting = includeWelcome ? 'Hola, soy Asesor Fénix 😊' : undefined;
+  const greeting = includeWelcome ? 'Hola, soy Asesor Fénix 👋' : undefined;
   const nameHook = personalize && session.name ? `Gracias, ${session.name}.` : undefined;
-  const priceLine = `Tengo los ${product.name} en ${product.currency} ${product.price}.`;
-  const highlight = product.highlights[0] ?? product.shortDescription;
-  const hook = `Son ideales porque ${highlight.toLowerCase()}. ¿Prefieres que te envíe fotos y video o te cuento cómo se instalan y los tiempos?`;
-  const parts = [greeting, nameHook, priceLine, hook].filter(Boolean);
-  const introMessage = parts.join(' ');
+  const highlightSource = (product.highlights[0] ?? product.shortDescription).trim();
+  const sanitizedHighlight = highlightSource.replace(/\s*\(.*?\)/g, '').replace(/\s{2,}/g, ' ').trim();
+  const highlightBase = sanitizedHighlight.length ? sanitizedHighlight : product.shortDescription;
+  const normalizedHighlight = highlightBase
+    ? highlightBase.charAt(0).toLowerCase() + highlightBase.slice(1)
+    : 'son ideales para personalizar tu vehículo';
+  const baseLine = `Tengo los ${product.name} en ${product.currency} ${product.price}: ${normalizedHighlight}.`;
+  const question = '¿Te mando fotos y video o prefieres hablar de instalación y tiempos?';
+  const introMessage = [greeting, nameHook, baseLine, question].filter(Boolean).join(' ');
 
   await sendTextMessage(session.waId, introMessage);
   recordBotMessage(session, introMessage);
@@ -794,6 +828,78 @@ function needsMediaResend(message: string): boolean {
   const resendClues = ['reenv', 'otra vez', 'no me lleg', 'no llegaron', 'no llegó', 'no recib'];
   return resendClues.some((pattern) => normalized.includes(pattern));
 }
+
+const BUSINESS_NAME_KEYWORDS = [
+  'srl',
+  's.a',
+  'sa',
+  'sac',
+  'corp',
+  'company',
+  'compañía',
+  'compania',
+  'co',
+  'team',
+  'group',
+  'store',
+  'shop',
+  'tienda',
+  'digital',
+  'studio',
+  'club',
+  'club',
+  'motors',
+  'motor',
+  'autos',
+  'logistics',
+  'logística',
+  'logistica',
+  'solutions',
+  'soluciones',
+  'agency',
+  'agencia',
+  'marketing',
+  'import',
+  'export',
+  'distrib',
+  'ignite',
+  'factory',
+  'servicios',
+  'service',
+  'systems',
+  'ventures',
+];
+
+const isLikelyPersonalName = (value: string): boolean => {
+  const normalized = value.trim();
+  if (!normalized) {
+    return false;
+  }
+  if (/\d/.test(normalized)) {
+    return false;
+  }
+
+  const lower = normalized.toLowerCase();
+  if (BUSINESS_NAME_KEYWORDS.some((keyword) => lower.includes(keyword))) {
+    return false;
+  }
+
+  const words = normalized.split(/\s+/).filter(Boolean);
+  if (!words.length || words.length > 3) {
+    return false;
+  }
+
+  if (!words.every((word) => /^[a-záéíóúüñ]+$/i.test(word))) {
+    return false;
+  }
+
+  const uppercaseWords = words.filter((word) => word.length > 2 && word === word.toUpperCase());
+  if (uppercaseWords.length === words.length) {
+    return false;
+  }
+
+  return true;
+};
 
 const notifyOperationsChannel = async (message: string, metadata?: Record<string, unknown>): Promise<void> => {
   await sendTextMessage(env.operationsPhoneNumber, message);
