@@ -3,7 +3,7 @@
   <head>
     <meta charset="UTF-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1" />
-    <title>Configurar producto · Asesor Fénix</title>
+    <title>Configurar demo · Bot</title>
     <style>
       :root {
         --bg: #0e1117;
@@ -48,12 +48,17 @@
         color: var(--muted);
       }
 
-      form {
+      .card {
         background: var(--card);
         padding: 24px;
         border-radius: 18px;
         border: 1px solid var(--border);
         box-shadow: 0 25px 60px rgba(0, 0, 0, 0.35);
+        margin-bottom: 32px;
+      }
+
+      form {
+        display: grid;
         display: grid;
         gap: 18px;
       }
@@ -153,14 +158,17 @@
   <body>
     <main>
       <header>
-        <h1>Mantenedor de producto</h1>
-        <p>Actualiza la ficha del producto que usa Asesor Fénix en WhatsApp.</p>
+        <h1>Panel de configuración</h1>
+        <p>Actualiza el catálogo del bot y personaliza el look & feel de la demo.</p>
       </header>
 
-      <form id="product-form">
-        <div class="grid two-cols">
-          <label>Nombre <input type="text" name="name" required /></label>
-          <label>SKU <input type="text" name="sku" required /></label>
+      <section class="card">
+        <h2>Producto</h2>
+        <p style="color: var(--muted); margin-top: 4px">Este contenido alimenta el prompt del bot.</p>
+        <form id="product-form">
+          <div class="grid two-cols">
+            <label>Nombre <input type="text" name="name" required /></label>
+            <label>SKU <input type="text" name="sku" required /></label>
         </div>
         <div class="grid two-cols">
           <label>Precio (num)
@@ -190,21 +198,67 @@
         <label>Pitch comercial
           <textarea name="pitch" rows="3" required></textarea>
         </label>
-        <div class="actions">
-          <button class="ghost" type="button" id="copy-snippet">Copiar JSON</button>
-          <button class="primary" type="submit">Guardar cambios</button>
-        </div>
-        <pre id="preview"></pre>
-      </form>
+          <div class="actions">
+            <button class="ghost" type="button" id="copy-snippet">Copiar JSON</button>
+            <button class="primary" type="submit">Guardar cambios</button>
+          </div>
+          <pre id="preview"></pre>
+        </form>
+      </section>
+
+      <section class="card">
+        <h2>Branding demo</h2>
+        <p style="color: var(--muted); margin-top: 4px">Modifica bot name, textos y colores del mock de WhatsApp.</p>
+        <form id="branding-form">
+          <div class="grid two-cols">
+            <label>Nombre del bot<input type="text" name="botName" required /></label>
+            <label>Status/header<input type="text" name="statusLine" required /></label>
+          </div>
+          <div class="grid two-cols">
+            <label>Etiqueta superior (carrier)<input type="text" name="carrierLabel" required /></label>
+            <label>Inicial avatar<input type="text" name="avatarInitials" maxlength="3" required /></label>
+          </div>
+          <label>Mensaje de bienvenida
+            <textarea name="greeting" rows="2" required></textarea>
+          </label>
+          <label>Placeholder del input
+            <input type="text" name="placeholder" required />
+          </label>
+          <div class="grid two-cols">
+            <label>Color fondo general<input type="color" name="theme.background" /></label>
+            <label>Panel dispositivo<input type="color" name="theme.panel" /></label>
+          </div>
+          <div class="grid two-cols">
+            <label>Burbuja agente<input type="color" name="theme.primary" /></label>
+            <label>Burbuja cliente<input type="color" name="theme.secondary" /></label>
+          </div>
+          <div class="grid two-cols">
+            <label>Accento botones<input type="color" name="theme.accent" /></label>
+            <label>Texto principal<input type="color" name="theme.text" /></label>
+          </div>
+          <div class="grid two-cols">
+            <label>Texto muted<input type="color" name="theme.textMuted" /></label>
+            <label>Bordes<input type="color" name="theme.border" /></label>
+          </div>
+          <div class="actions">
+            <button class="ghost" type="button" id="copy-branding">Copiar JSON</button>
+            <button class="primary" type="submit">Guardar branding</button>
+          </div>
+          <pre id="branding-preview"></pre>
+        </form>
+      </section>
     </main>
 
     <div class="toast" id="toast">Guardado</div>
 
     <script>
-      const form = document.getElementById('product-form');
-      const toast = document.getElementById('toast');
+      const productForm = document.getElementById('product-form');
+      const brandingForm = document.getElementById('branding-form');
       const preview = document.getElementById('preview');
+      const brandingPreview = document.getElementById('branding-preview');
+      const toast = document.getElementById('toast');
       const copyBtn = document.getElementById('copy-snippet');
+      const copyBrandingBtn = document.getElementById('copy-branding');
 
       const showToast = (message) => {
         toast.textContent = message;
@@ -212,64 +266,120 @@
         setTimeout(() => toast.classList.remove('visible'), 2000);
       };
 
-      const serializeForm = () => {
-        const data = Object.fromEntries(new FormData(form).entries());
-        return {
-          name: data.name?.trim(),
-          sku: data.sku?.trim(),
-          price: Number(data.price),
-          currency: data.currency?.trim().toUpperCase(),
-          shortDescription: data.shortDescription?.trim(),
-          highlights: splitLines(data.highlights),
-          materials: splitLines(data.materials),
-          packageIncludes: data.packageIncludes?.trim(),
-          deliveryPromise: data.deliveryPromise?.trim(),
-          pitch: data.pitch?.trim(),
-        };
-      };
-
-      const splitLines = (value = '') => {
-        return value
-          .split(/\r?\n/)
-          .map((line) => line.trim())
-          .filter(Boolean);
-      };
-
-      const updatePreview = () => {
-        const payload = serializeForm();
-        preview.textContent = JSON.stringify(payload, null, 2);
-      };
-
-      const populateForm = (data) => {
-        Object.entries(data).forEach(([key, value]) => {
-          const field = form.elements.namedItem(key);
-          if (!field) return;
-          if (Array.isArray(value)) {
-            field.value = value.join('\n');
-          } else {
-            field.value = value;
-          }
-        });
-        updatePreview();
-      };
-
-      const fetchProduct = async () => {
-        try {
-          const response = await fetch('/api/product');
-          if (!response.ok) throw new Error('Error cargando producto');
-          const data = await response.json();
-          populateForm(data);
-        } catch (error) {
-          showToast('No pude cargar el producto');
-          console.error(error);
+      const setField = (form, name, value) => {
+        const field = form.querySelector(`[name="${name}"]`);
+        if (!field) return;
+        if ('value' in field) {
+          field.value = value ?? '';
         }
       };
 
-      form.addEventListener('input', updatePreview);
+      const serializeProductForm = () => {
+        const data = Object.fromEntries(new FormData(productForm).entries());
+        const toLines = (value) =>
+          String(value ?? '')
+            .split(/\r?\n/)
+            .map((line) => line.trim())
+            .filter(Boolean);
+        return {
+          name: String(data.name ?? '').trim(),
+          sku: String(data.sku ?? '').trim(),
+          price: Number(data.price ?? 0),
+          currency: String(data.currency ?? '').trim().toUpperCase(),
+          shortDescription: String(data.shortDescription ?? '').trim(),
+          highlights: toLines(data.highlights),
+          materials: toLines(data.materials),
+          packageIncludes: String(data.packageIncludes ?? '').trim(),
+          deliveryPromise: String(data.deliveryPromise ?? '').trim(),
+          pitch: String(data.pitch ?? '').trim(),
+        };
+      };
 
-      form.addEventListener('submit', async (event) => {
+      const updateProductPreview = () => {
+        preview.textContent = JSON.stringify(serializeProductForm(), null, 2);
+      };
+
+      const fillProductForm = (product) => {
+        setField(productForm, 'name', product.name);
+        setField(productForm, 'sku', product.sku);
+        setField(productForm, 'price', product.price);
+        setField(productForm, 'currency', product.currency);
+        setField(productForm, 'shortDescription', product.shortDescription);
+        setField(productForm, 'highlights', Array.isArray(product.highlights) ? product.highlights.join('\n') : '');
+        setField(productForm, 'materials', Array.isArray(product.materials) ? product.materials.join('\n') : '');
+        setField(productForm, 'packageIncludes', product.packageIncludes);
+        setField(productForm, 'deliveryPromise', product.deliveryPromise);
+        setField(productForm, 'pitch', product.pitch);
+        updateProductPreview();
+      };
+
+      const setBrandingField = (name, value) => setField(brandingForm, name, value);
+
+      const serializeBrandingForm = () => {
+        const data = Object.fromEntries(new FormData(brandingForm).entries());
+        const theme = {};
+        Object.entries(data).forEach(([key, value]) => {
+          if (key.startsWith('theme.')) {
+            theme[key.replace('theme.', '')] = String(value ?? '');
+          }
+        });
+        return {
+          botName: String(data.botName ?? ''),
+          statusLine: String(data.statusLine ?? ''),
+          carrierLabel: String(data.carrierLabel ?? ''),
+          greeting: String(data.greeting ?? ''),
+          placeholder: String(data.placeholder ?? ''),
+          avatarInitials: String(data.avatarInitials ?? ''),
+          theme,
+        };
+      };
+
+      const updateBrandingPreview = () => {
+        brandingPreview.textContent = JSON.stringify(serializeBrandingForm(), null, 2);
+      };
+
+      const fillBrandingForm = (branding) => {
+        setBrandingField('botName', branding.botName);
+        setBrandingField('statusLine', branding.statusLine);
+        setBrandingField('carrierLabel', branding.carrierLabel);
+        setBrandingField('greeting', branding.greeting);
+        setBrandingField('placeholder', branding.placeholder);
+        setBrandingField('avatarInitials', branding.avatarInitials);
+        const theme = branding.theme ?? {};
+        Object.entries(theme).forEach(([key, value]) => {
+          setBrandingField(`theme.${key}`, value);
+        });
+        updateBrandingPreview();
+      };
+
+      const loadProduct = async () => {
+        try {
+          const response = await fetch('/api/product');
+          if (!response.ok) throw new Error('Error cargando producto');
+          const product = await response.json();
+          fillProductForm(product);
+        } catch (error) {
+          showToast('No pude cargar el producto');
+        }
+      };
+
+      const loadBranding = async () => {
+        try {
+          const response = await fetch('/api/branding');
+          if (!response.ok) throw new Error('Error cargando branding');
+          const branding = await response.json();
+          fillBrandingForm(branding);
+        } catch (error) {
+          showToast('No pude cargar branding');
+        }
+      };
+
+      productForm.addEventListener('input', updateProductPreview);
+      brandingForm.addEventListener('input', updateBrandingPreview);
+
+      productForm.addEventListener('submit', async (event) => {
         event.preventDefault();
-        const payload = serializeForm();
+        const payload = serializeProductForm();
         try {
           const response = await fetch('/api/product', {
             method: 'PUT',
@@ -286,17 +396,45 @@
         }
       });
 
-      copyBtn.addEventListener('click', async () => {
-        const payload = serializeForm();
+      brandingForm.addEventListener('submit', async (event) => {
+        event.preventDefault();
+        const payload = serializeBrandingForm();
         try {
-          await navigator.clipboard.writeText(JSON.stringify(payload, null, 2));
+          const response = await fetch('/api/branding', {
+            method: 'PUT',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify(payload),
+          });
+          if (!response.ok) {
+            const error = await response.json().catch(() => ({ error: 'Error al guardar branding' }));
+            throw new Error(error.error || 'Error al guardar branding');
+          }
+          showToast('Branding actualizado');
+        } catch (error) {
+          showToast(error.message || 'Error al guardar branding');
+        }
+      });
+
+      copyBtn.addEventListener('click', async () => {
+        try {
+          await navigator.clipboard.writeText(JSON.stringify(serializeProductForm(), null, 2));
           showToast('JSON copiado');
         } catch (error) {
           showToast('No pude copiar');
         }
       });
 
-      fetchProduct();
+      copyBrandingBtn.addEventListener('click', async () => {
+        try {
+          await navigator.clipboard.writeText(JSON.stringify(serializeBrandingForm(), null, 2));
+          showToast('Branding copiado');
+        } catch (error) {
+          showToast('No pude copiar branding');
+        }
+      });
+
+      loadProduct();
+      loadBranding();
     </script>
   </body>
 </html>

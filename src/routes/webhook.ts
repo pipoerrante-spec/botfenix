@@ -3,6 +3,7 @@ import { env } from '../config/env';
 import { sendTextMessage } from '../services/whatsappService';
 import { getChatGPTReply } from '../services/openaiService';
 import { getProductInfo } from '../config/product';
+import { getBrandingConfig } from '../config/branding';
 import { logConversationMessage } from '../services/conversationLogService';
 import { WhatsAppWebhookRequestBody, WhatsAppTextMessage, WhatsAppContact } from '../types/whatsapp';
 
@@ -58,8 +59,14 @@ const NEGATIVE_KEYWORDS = ['cambiar', 'cancel', 'cancelar', 'modificar'];
 
 const operationsPhoneNormalized = normalizePhone(env.operationsPhoneNumber);
 
-const WELCOME_MESSAGE =
-  'Hola, soy Asesor Fénix de Fénix Store. Estoy listo para ayudarte con tu compra. ¿Cómo te llamas?';
+const getWelcomeMessage = (): string => {
+  try {
+    const branding = getBrandingConfig();
+    return branding.greeting || 'Hola, soy Asesor Fénix. ¿Cómo te llamas?';
+  } catch (error) {
+    return 'Hola, soy Asesor Fénix. ¿Cómo te llamas?';
+  }
+};
 
 const buildCityPrompt = (name?: string): string => {
   const product = getProductInfo();
@@ -98,13 +105,14 @@ export const handleIncomingMessage = async ({
   });
 
   if (session.stage === 'nuevo') {
-    await sendTextMessage(session.waId, WELCOME_MESSAGE);
+    const welcome = getWelcomeMessage();
+    await sendTextMessage(session.waId, welcome);
     session.stage = 'awaiting_name';
     await logConversationMessage({
       conversationId: normalizedWaId,
       channel: 'whatsapp',
       direction: 'outgoing',
-      message: WELCOME_MESSAGE,
+      message: welcome,
       phone: session.waId,
       name: 'Asesor Fénix',
       metadata: { stage: session.stage },

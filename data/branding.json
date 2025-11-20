@@ -1,0 +1,18 @@
+{
+  "botName": "Asesor Fénix",
+  "statusLine": "en línea · WhatsApp",
+  "carrierLabel": "FENIX 4G • 82%",
+  "greeting": "¡Bienvenido a Fénix! ¿En qué te puedo ayudar?",
+  "placeholder": "Escribe tu mensaje",
+  "avatarInitials": "F",
+  "theme": {
+    "background": "#0b141a",
+    "panel": "#111b21",
+    "primary": "#202c33",
+    "secondary": "#005c4b",
+    "accent": "#25d366",
+    "text": "#e9edef",
+    "textMuted": "#8696a0",
+    "border": "#1f2c34"
+  }
+}

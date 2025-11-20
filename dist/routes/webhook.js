@@ -6,6 +6,7 @@ const env_1 = require("../config/env");
 const whatsappService_1 = require("../services/whatsappService");
 const openaiService_1 = require("../services/openaiService");
 const product_1 = require("../config/product");
+const branding_1 = require("../config/branding");
 const conversationLogService_1 = require("../services/conversationLogService");
 const router = (0, express_1.Router)();
 const leadSessions = new Map();
@@ -18,7 +19,15 @@ const ORDER_KEYWORDS = ['comprar', 'pedido', 'orden', 'agendar', 'apartalo', 'lo
 const POSITIVE_CONFIRMATIONS = ['si', 'sí', 'claro', 'confirmo', 'ok', 'va', 'dale', 'perfecto', 'queda'];
 const NEGATIVE_KEYWORDS = ['cambiar', 'cancel', 'cancelar', 'modificar'];
 const operationsPhoneNormalized = normalizePhone(env_1.env.operationsPhoneNumber);
-const WELCOME_MESSAGE = 'Hola, soy Asesor Fénix de Fénix Store. Estoy listo para ayudarte con tu compra. ¿Cómo te llamas?';
+const getWelcomeMessage = () => {
+    try {
+        const branding = (0, branding_1.getBrandingConfig)();
+        return branding.greeting || 'Hola, soy Asesor Fénix. ¿Cómo te llamas?';
+    }
+    catch (error) {
+        return 'Hola, soy Asesor Fénix. ¿Cómo te llamas?';
+    }
+};
 const buildCityPrompt = (name) => {
     const product = (0, product_1.getProductInfo)();
     return `Gracias${name ? ` ${name}` : ''}. ¿En qué ciudad te encuentras para coordinar entrega del ${product.name}?`;
@@ -40,13 +49,14 @@ const handleIncomingMessage = async ({ waId, normalizedWaId, profileName, text, 
         metadata: { stage: session.stage },
     });
     if (session.stage === 'nuevo') {
-        await (0, whatsappService_1.sendTextMessage)(session.waId, WELCOME_MESSAGE);
+        const welcome = getWelcomeMessage();
+        await (0, whatsappService_1.sendTextMessage)(session.waId, welcome);
         session.stage = 'awaiting_name';
         await (0, conversationLogService_1.logConversationMessage)({
             conversationId: normalizedWaId,
             channel: 'whatsapp',
             direction: 'outgoing',
-            message: WELCOME_MESSAGE,
+            message: welcome,
             phone: session.waId,
             name: 'Asesor Fénix',
             metadata: { stage: session.stage },

@@ -1,0 +1,285 @@
+<!DOCTYPE html>
+<html lang="es">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>Panel de Conversaciones</title>
+    <style>
+      :root {
+        --bg: #050607;
+        --card: #0e1117;
+        --muted: #8b97b4;
+        --text: #f5f6f9;
+        --accent: #25d366;
+        --border: #1f2330;
+      }
+
+      * {
+        box-sizing: border-box;
+      }
+
+      body {
+        margin: 0;
+        min-height: 100vh;
+        background: var(--bg);
+        font-family: 'Inter', system-ui, sans-serif;
+        color: var(--text);
+        padding: 32px 16px 64px;
+      }
+
+      header {
+        max-width: 1200px;
+        margin: 0 auto 24px;
+      }
+
+      h1 {
+        margin: 0 0 6px;
+        font-size: 2rem;
+      }
+
+      main {
+        max-width: 1200px;
+        margin: 0 auto;
+        display: flex;
+        gap: 24px;
+        flex-wrap: wrap;
+      }
+
+      .card {
+        background: var(--card);
+        border-radius: 20px;
+        border: 1px solid var(--border);
+        box-shadow: 0 20px 60px rgba(0, 0, 0, 0.35);
+        padding: 20px;
+      }
+
+      .stats-card {
+        flex: 1;
+        min-width: 280px;
+      }
+
+      .logs-card {
+        flex: 2;
+        min-width: 360px;
+        overflow: hidden;
+      }
+
+      .stat-grid {
+        display: grid;
+        grid-template-columns: repeat(auto-fit, minmax(120px, 1fr));
+        gap: 16px;
+        margin-top: 12px;
+      }
+
+      .stat {
+        background: rgba(255, 255, 255, 0.03);
+        border-radius: 16px;
+        border: 1px solid rgba(255, 255, 255, 0.04);
+        padding: 14px;
+      }
+
+      .stat-label {
+        font-size: 0.8rem;
+        color: var(--muted);
+        text-transform: uppercase;
+        letter-spacing: 0.08em;
+      }
+
+      .stat-value {
+        margin-top: 6px;
+        font-size: 1.6rem;
+        font-weight: 600;
+      }
+
+      .filters {
+        display: flex;
+        gap: 12px;
+        margin-bottom: 16px;
+        flex-wrap: wrap;
+      }
+
+      select {
+        background: rgba(255, 255, 255, 0.05);
+        border: 1px solid rgba(255, 255, 255, 0.1);
+        border-radius: 12px;
+        color: var(--text);
+        padding: 8px 12px;
+      }
+
+      table {
+        width: 100%;
+        border-collapse: collapse;
+      }
+
+      thead th {
+        text-align: left;
+        font-size: 0.75rem;
+        text-transform: uppercase;
+        letter-spacing: 0.08em;
+        color: var(--muted);
+        padding-bottom: 8px;
+        border-bottom: 1px solid rgba(255, 255, 255, 0.08);
+      }
+
+      tbody td {
+        padding: 12px 0;
+        border-bottom: 1px solid rgba(255, 255, 255, 0.05);
+        font-size: 0.95rem;
+      }
+
+      tbody tr:last-child td {
+        border-bottom: none;
+      }
+
+      .badge {
+        padding: 4px 10px;
+        border-radius: 999px;
+        font-size: 0.75rem;
+        text-transform: uppercase;
+        letter-spacing: 0.08em;
+        background: rgba(37, 211, 102, 0.15);
+        color: var(--accent);
+      }
+
+      .direction-outgoing {
+        color: #67e8f9;
+      }
+
+      .direction-incoming {
+        color: #f472b6;
+      }
+
+      .empty-state {
+        text-align: center;
+        color: var(--muted);
+        padding: 40px 0;
+      }
+    </style>
+  </head>
+  <body>
+    <header>
+      <h1>Panel de conversaciones</h1>
+      <p style="color: var(--muted)">Monitorea lo que el bot ha conversado en cualquier canal.</p>
+    </header>
+
+    <main>
+      <section class="card stats-card">
+        <h2 style="margin: 0">Resumen</h2>
+        <div class="stat-grid" id="stats-grid" style="margin-top: 18px"></div>
+      </section>
+
+      <section class="card logs-card">
+        <div class="filters">
+          <label>
+            Canal
+            <select id="channel-filter">
+              <option value="all">Todos</option>
+              <option value="whatsapp">WhatsApp</option>
+              <option value="web">Web demo</option>
+              <option value="operations">Operaciones</option>
+            </select>
+          </label>
+          <label>
+            Limite
+            <select id="limit-filter">
+              <option value="50">50</option>
+              <option value="100">100</option>
+              <option value="200">200</option>
+            </select>
+          </label>
+        </div>
+        <div style="overflow-x: auto">
+          <table>
+            <thead>
+              <tr>
+                <th>Fecha</th>
+                <th>Canal</th>
+                <th>Dirección</th>
+                <th>Mensaje</th>
+              </tr>
+            </thead>
+            <tbody id="logs-body"></tbody>
+          </table>
+        </div>
+        <div class="empty-state" id="logs-empty" style="display: none">Sin interacciones recientes.</div>
+      </section>
+    </main>
+
+    <script>
+      const statsGrid = document.getElementById('stats-grid');
+      const logsBody = document.getElementById('logs-body');
+      const logsEmpty = document.getElementById('logs-empty');
+      const channelFilter = document.getElementById('channel-filter');
+      const limitFilter = document.getElementById('limit-filter');
+
+      const fetchStats = async () => {
+        try {
+          const response = await fetch('/api/dashboard/stats');
+          if (!response.ok) throw new Error('Error stats');
+          const stats = await response.json();
+          renderStats(stats);
+        } catch (error) {
+          statsGrid.innerHTML = '<p>No pude cargar stats.</p>';
+        }
+      };
+
+      const renderStats = (stats) => {
+        statsGrid.innerHTML = '';
+        const cards = [{ label: 'Total mensajes', value: stats.total ?? 0 }];
+        const channelEntries = stats.byChannel ? Object.entries(stats.byChannel) : [];
+        channelEntries.forEach(([channel, count]) => {
+          cards.push({ label: `Canal ${channel}`, value: count as number });
+        });
+        cards.forEach((card) => {
+          const div = document.createElement('div');
+          div.className = 'stat';
+          div.innerHTML = `<div class="stat-label">${card.label}</div><div class="stat-value">${card.value}</div>`;
+          statsGrid.appendChild(div);
+        });
+      };
+
+      const fetchLogs = async () => {
+        const limit = limitFilter.value;
+        const channel = channelFilter.value;
+        const url = new URL('/api/dashboard/logs', window.location.origin);
+        url.searchParams.set('limit', limit);
+        try {
+          const response = await fetch(url.toString());
+          if (!response.ok) throw new Error('Error logs');
+          let logs = await response.json();
+          if (channel !== 'all') {
+            logs = logs.filter((log) => log.channel === channel);
+          }
+          renderLogs(logs);
+        } catch (error) {
+          logsBody.innerHTML = '';
+          logsEmpty.style.display = 'block';
+          logsEmpty.textContent = 'No pude cargar los logs.';
+        }
+      };
+
+      const renderLogs = (logs) => {
+        logsBody.innerHTML = '';
+        logsEmpty.style.display = logs.length ? 'none' : 'block';
+        logs.forEach((log) => {
+          const tr = document.createElement('tr');
+          const created = new Date(log.created_at).toLocaleString();
+          tr.innerHTML = `
+            <td>${created}</td>
+            <td><span class="badge">${log.channel}</span></td>
+            <td class="direction-${log.direction}">${log.direction}</td>
+            <td>${log.message}</td>
+          `;
+          logsBody.appendChild(tr);
+        });
+      };
+
+      channelFilter.addEventListener('change', fetchLogs);
+      limitFilter.addEventListener('change', fetchLogs);
+
+      fetchStats();
+      fetchLogs();
+      setInterval(fetchLogs, 15000);
+    </script>
+  </body>
+</html>

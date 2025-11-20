@@ -4,6 +4,8 @@ import { randomUUID } from 'crypto';
 import { env } from './config/env';
 import webhookRouter from './routes/webhook';
 import productConfigRouter from './routes/productConfig';
+import brandingConfigRouter from './routes/brandingConfig';
+import dashboardApiRouter from './routes/dashboard';
 import { getChatGPTReply } from './services/openaiService';
 import { logConversationMessage } from './services/conversationLogService';
 
@@ -13,6 +15,8 @@ const staticDir = path.join(__dirname, '../public');
 app.use(express.json());
 app.use(express.static(staticDir));
 app.use('/api/product', productConfigRouter);
+app.use('/api/branding', brandingConfigRouter);
+app.use('/api/dashboard', dashboardApiRouter);
 
 app.get('/health', (_req: Request, res: Response) => {
   res.json({ status: 'ok' });

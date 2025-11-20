@@ -87,7 +87,7 @@
       .chat-body {
         flex: 1;
         background: url('https://www.transparenttextures.com/patterns/cubes.png');
-        background-color: #0b141a;
+        background-color: var(--bg);
         padding: 20px 16px 24px;
         display: flex;
         flex-direction: column;
@@ -196,14 +196,14 @@
   <body>
     <div class="phone">
       <div class="status-bar">
-        <span>17:45</span>
-        <span>FENIX 4G • 82%</span>
+        <span id="status-time">17:45</span>
+        <span id="carrier-label">FENIX 4G • 82%</span>
       </div>
       <header class="chat-header">
-        <div class="avatar">F</div>
+        <div class="avatar" id="avatar">F</div>
         <div>
-          <h1>Asesor Fénix</h1>
-          <small>en línea · WhatsApp</small>
+          <h1 id="bot-name">Asesor Fénix</h1>
+          <small id="status-line">en línea · WhatsApp</small>
         </div>
       </header>
       <main class="chat-body" id="messages"></main>
@@ -228,6 +228,10 @@
       const form = document.getElementById('chat-form');
       const input = document.getElementById('message-input');
       const toast = document.getElementById('toast');
+      const botNameEl = document.getElementById('bot-name');
+      const statusLineEl = document.getElementById('status-line');
+      const carrierLabelEl = document.getElementById('carrier-label');
+      const avatarEl = document.getElementById('avatar');
       const uuid = () => (crypto?.randomUUID ? crypto.randomUUID() : `${Date.now()}-${Math.random()}`);
       const getStoredSession = () => {
         try {
@@ -245,6 +249,46 @@
       };
       let sessionId = getStoredSession() || uuid();
       persistSession(sessionId);
+
+      let branding = {
+        botName: 'Asesor Fénix',
+        statusLine: 'en línea · WhatsApp',
+        carrierLabel: 'FENIX 4G • 82%',
+        greeting: '¡Bienvenido a Fénix! ¿En qué te puedo ayudar?',
+        placeholder: 'Escribe tu mensaje',
+        avatarInitials: 'F',
+        theme: {
+          background: '#0b141a',
+          panel: '#111b21',
+          primary: '#202c33',
+          secondary: '#005c4b',
+          accent: '#25d366',
+          text: '#e9edef',
+          textMuted: '#8696a0',
+          border: '#1f2c34',
+        },
+      };
+
+      const applyBranding = (config) => {
+        branding = { ...branding, ...config, theme: { ...branding.theme, ...(config.theme ?? {}) } };
+        const theme = branding.theme;
+        Object.entries({
+          '--bg': theme.background,
+          '--panel': theme.panel,
+          '--primary': theme.primary,
+          '--secondary': theme.secondary,
+          '--accent': theme.accent,
+          '--text': theme.text,
+          '--text-muted': theme.textMuted,
+          '--border': theme.border,
+        }).forEach(([key, value]) => document.documentElement.style.setProperty(key, value));
+
+        botNameEl.textContent = branding.botName;
+        statusLineEl.textContent = branding.statusLine;
+        carrierLabelEl.textContent = branding.carrierLabel;
+        avatarEl.textContent = (branding.avatarInitials || branding.botName.charAt(0) || 'A').toUpperCase();
+        input.placeholder = branding.placeholder;
+      };
 
       const addMessage = (sender, text) => {
         const wrapper = document.createElement('div');
@@ -265,7 +309,7 @@
 
       const sendMessage = async (text) => {
         addMessage('user', text);
-        const typingBubble = addMessage('agent', 'Asesor Fénix está escribiendo…');
+        const typingBubble = addMessage('agent', `${branding.botName} está escribiendo…`);
         try {
           const response = await fetch('/test-chat', {
             method: 'POST',
@@ -300,7 +344,21 @@
         sendMessage(text);
       });
 
-      addMessage('agent', '¡Bienvenido a Fénix! ¿En qué te puedo ayudar?');
+      const loadBranding = async () => {
+        try {
+          const response = await fetch('/api/branding');
+          if (!response.ok) throw new Error('error');
+          const data = await response.json();
+          applyBranding(data);
+        } catch (error) {
+          applyBranding(branding);
+        }
+      };
+
+      (async () => {
+        await loadBranding();
+        addMessage('agent', branding.greeting);
+      })();
     </script>
   </body>
 </html>
