@@ -1,0 +1,12 @@
+[
+  {
+    "type": "image",
+    "url": "https://gpjkmdbccknfrvzhsoth.supabase.co/storage/v1/object/public/Imagenes/ojos1.jpg",
+    "caption": "Ojos LED vista 1"
+  },
+  {
+    "type": "image",
+    "url": "https://gpjkmdbccknfrvzhsoth.supabase.co/storage/v1/object/public/Imagenes/ojos2.jpg",
+    "caption": "Ojos LED vista 2"
+  }
+]

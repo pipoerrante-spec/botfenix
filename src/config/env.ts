@@ -14,6 +14,7 @@ export interface Env {
   operationsPhoneNumber: string;
   supabase?: SupabaseConfig | null;
   supabaseMediaBucket?: string | null;
+  supabaseMediaPrefix?: string | null;
 }
 
 const required = (key: string): string => {
@@ -48,6 +49,15 @@ const resolveMediaBucket = (): string | null => {
   return value ?? null;
 };
 
+const resolveMediaPrefix = (): string | null => {
+  const value = process.env.PRODUCT_MEDIA_PREFIX;
+  if (!value) {
+    return null;
+  }
+  const trimmed = value.trim().replace(/^\/+|\/+$/g, '');
+  return trimmed.length ? trimmed : null;
+};
+
 export const env: Env = {
   port: normalizePort(process.env.PORT),
   metaVerifyToken: required('META_VERIFY_TOKEN'),
@@ -57,4 +67,5 @@ export const env: Env = {
   operationsPhoneNumber: required('OPERATIONS_PHONE_NUMBER'),
   supabase: resolveSupabaseConfig(),
   supabaseMediaBucket: resolveMediaBucket(),
+  supabaseMediaPrefix: resolveMediaPrefix(),
 };

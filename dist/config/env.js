@@ -28,6 +28,14 @@ const resolveMediaBucket = () => {
     const value = process.env.PRODUCT_MEDIA_BUCKET;
     return value ?? null;
 };
+const resolveMediaPrefix = () => {
+    const value = process.env.PRODUCT_MEDIA_PREFIX;
+    if (!value) {
+        return null;
+    }
+    const trimmed = value.trim().replace(/^\/+|\/+$/g, '');
+    return trimmed.length ? trimmed : null;
+};
 exports.env = {
     port: normalizePort(process.env.PORT),
     metaVerifyToken: required('META_VERIFY_TOKEN'),
@@ -37,4 +45,5 @@ exports.env = {
     operationsPhoneNumber: required('OPERATIONS_PHONE_NUMBER'),
     supabase: resolveSupabaseConfig(),
     supabaseMediaBucket: resolveMediaBucket(),
+    supabaseMediaPrefix: resolveMediaPrefix(),
 };

@@ -104,6 +104,15 @@ const handleIncomingMessage = async ({ waId, normalizedWaId, profileName, text, 
         if (session.stage === 'awaiting_city' && session.city) {
             session.stage = 'chatting';
         }
+        const askedForMedia = shouldShareMedia(cleanText) || isProductInterest(cleanText);
+        const wantsMedia = askedForMedia && (!session.mediaShared || needsMediaResend(cleanText) || session.stage === 'awaiting_confirmation');
+        if (wantsMedia) {
+            await shareProductMedia({
+                session,
+                normalizedWaId,
+                isResend: session.mediaShared || needsMediaResend(cleanText),
+            });
+        }
         if (session.stage === 'chatting' && session.cityAllowed !== false && shouldStartOrderFlow(cleanText)) {
             startOrderFlow(session);
         }
@@ -174,29 +183,6 @@ const handleIncomingMessage = async ({ waId, normalizedWaId, profileName, text, 
                 name: 'Asesor Fénix',
                 metadata: { stage: session.stage },
             });
-            const wantsMedia = shouldShareMedia(cleanText) || isProductInterest(cleanText);
-            if (wantsMedia && !session.mediaShared) {
-                const assets = await (0, mediaService_1.listProductMedia)();
-                if (assets.length) {
-                    session.mediaShared = true;
-                    const intro = 'Te comparto fotos y videos del producto para que lo veas mejor 👇';
-                    await (0, whatsappService_1.sendTextMessage)(session.waId, intro);
-                    recordBotMessage(session, intro);
-                    await (0, conversationLogService_1.logConversationMessage)({
-                        conversationId: normalizedWaId,
-                        channel: 'whatsapp',
-                        direction: 'outgoing',
-                        message: intro,
-                        phone: session.waId,
-                        name: 'Asesor Fénix',
-                        metadata: { stage: session.stage },
-                    });
-                    for (const asset of assets) {
-                        await (0, whatsappService_1.sendMediaMessage)({ to: session.waId, type: asset.type, link: asset.url, caption: asset.caption });
-                        recordBotMessage(session, `[Media ${asset.type}] ${asset.caption ?? asset.url}`);
-                    }
-                }
-            }
         }
         catch (error) {
             console.error('Error al procesar la respuesta de OpenAI', error);
@@ -551,6 +537,82 @@ const buildContextNotes = (session) => {
     notes.push(`Media compartida: ${session.mediaShared ? 'sí' : 'no'}`);
     return notes;
 };
+const shareProductMedia = async ({ session, normalizedWaId, isResend, }) => {
+    const assets = await (0, mediaService_1.listProductMedia)();
+    if (!assets.length) {
+        const fallback = 'Aún no tengo archivos listos para compartir en este momento, pero ya pedí al equipo que los habilite y te aviso apenas estén disponibles.';
+        await (0, whatsappService_1.sendTextMessage)(session.waId, fallback);
+        recordBotMessage(session, fallback);
+        await (0, conversationLogService_1.logConversationMessage)({
+            conversationId: normalizedWaId,
+            channel: 'whatsapp',
+            direction: 'outgoing',
+            message: fallback,
+            phone: session.waId,
+            name: 'Asesor Fénix',
+            metadata: { stage: session.stage, mediaShared: false },
+        });
+        return;
+    }
+    const intro = isResend
+        ? 'Reenviando las fotos del producto para que las tengas a mano 👇'
+        : 'Te comparto fotos y videos del producto para que lo veas mejor 👇';
+    await (0, whatsappService_1.sendTextMessage)(session.waId, intro);
+    recordBotMessage(session, intro);
+    await (0, conversationLogService_1.logConversationMessage)({
+        conversationId: normalizedWaId,
+        channel: 'whatsapp',
+        direction: 'outgoing',
+        message: intro,
+        phone: session.waId,
+        name: 'Asesor Fénix',
+        metadata: { stage: session.stage, mediaShared: true, mediaResend: Boolean(isResend) },
+    });
+    let sentAny = false;
+    for (const asset of assets) {
+        try {
+            await (0, whatsappService_1.sendMediaMessage)({ to: session.waId, type: asset.type, link: asset.url, caption: asset.caption });
+            sentAny = true;
+            const mediaLog = `[Media ${asset.type}] ${asset.caption ?? asset.url}`;
+            recordBotMessage(session, mediaLog);
+            await (0, conversationLogService_1.logConversationMessage)({
+                conversationId: normalizedWaId,
+                channel: 'whatsapp',
+                direction: 'outgoing',
+                message: mediaLog,
+                phone: session.waId,
+                name: 'Asesor Fénix',
+                metadata: { stage: session.stage, mediaShared: true },
+            });
+        }
+        catch (error) {
+            console.error('No se pudo enviar media, enviando fallback con link', error);
+            const fallbackText = `Aquí tienes el enlace: ${asset.url}`;
+            await (0, whatsappService_1.sendTextMessage)(session.waId, fallbackText);
+            recordBotMessage(session, fallbackText);
+            sentAny = true;
+            await (0, conversationLogService_1.logConversationMessage)({
+                conversationId: normalizedWaId,
+                channel: 'whatsapp',
+                direction: 'outgoing',
+                message: fallbackText,
+                phone: session.waId,
+                name: 'Asesor Fénix',
+                metadata: { stage: session.stage, mediaShared: true, fallbackLink: true },
+            });
+        }
+    }
+    if (!sentAny) {
+        const notice = 'Hubo un problema enviando archivos, te dejo los links aquí:';
+        await (0, whatsappService_1.sendTextMessage)(session.waId, `${notice}\n${assets.map((asset) => asset.url).join('\n')}`);
+    }
+    session.mediaShared = true;
+};
+function needsMediaResend(message) {
+    const normalized = message.toLowerCase();
+    const resendClues = ['reenv', 'otra vez', 'no me lleg', 'no llegaron', 'no llegó', 'no recib'];
+    return resendClues.some((pattern) => normalized.includes(pattern));
+}
 const notifyOperationsChannel = async (message, metadata) => {
     await (0, whatsappService_1.sendTextMessage)(env_1.env.operationsPhoneNumber, message);
     await (0, conversationLogService_1.logConversationMessage)({
