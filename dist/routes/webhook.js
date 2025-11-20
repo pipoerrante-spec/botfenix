@@ -22,15 +22,11 @@ const operationsPhoneNormalized = normalizePhone(env_1.env.operationsPhoneNumber
 const getWelcomeMessage = () => {
     try {
         const branding = (0, branding_1.getBrandingConfig)();
-        return branding.greeting || 'Hola, soy Asesor Fénix. ¿Cómo te llamas?';
+        return branding.greeting || 'Hola, soy Asesor Fénix. ¿En qué te puedo ayudar hoy?';
     }
     catch (error) {
-        return 'Hola, soy Asesor Fénix. ¿Cómo te llamas?';
+        return 'Hola, soy Asesor Fénix. ¿En qué te puedo ayudar hoy?';
     }
-};
-const buildCityPrompt = (name) => {
-    const product = (0, product_1.getProductInfo)();
-    return `Gracias${name ? ` ${name}` : ''}. ¿En qué ciudad te encuentras para coordinar entrega del ${product.name}?`;
 };
 const handleIncomingMessage = async ({ waId, normalizedWaId, profileName, text, }) => {
     const cleanText = text.trim();
@@ -61,42 +57,25 @@ const handleIncomingMessage = async ({ waId, normalizedWaId, profileName, text, 
             name: 'Asesor Fénix',
             metadata: { stage: session.stage },
         });
-        return;
     }
-    if (session.stage === 'awaiting_name') {
-        session.name = extractNameFromMessage(cleanText) ?? session.name ?? profileName;
-        if (!session.name) {
-            await (0, whatsappService_1.sendTextMessage)(session.waId, '¿Me compartes tu nombre para personalizar tu atención?');
-            await (0, conversationLogService_1.logConversationMessage)({
-                conversationId: normalizedWaId,
-                channel: 'whatsapp',
-                direction: 'outgoing',
-                message: '¿Me compartes tu nombre para personalizar tu atención?',
-                phone: session.waId,
-                name: 'Asesor Fénix',
-                metadata: { stage: session.stage },
-            });
-            return;
+    if (session.stage === 'awaiting_name' && !session.name) {
+        const explicitName = extractNameFromMessage(cleanText);
+        if (explicitName) {
+            session.name = explicitName;
+            session.stage = session.city ? 'chatting' : 'awaiting_city';
         }
-        session.stage = 'awaiting_city';
-        const prompt = buildCityPrompt(session.name.split(' ')[0]);
-        await (0, whatsappService_1.sendTextMessage)(session.waId, prompt);
-        await (0, conversationLogService_1.logConversationMessage)({
-            conversationId: normalizedWaId,
-            channel: 'whatsapp',
-            direction: 'outgoing',
-            message: prompt,
-            phone: session.waId,
-            name: 'Asesor Fénix',
-            metadata: { stage: session.stage },
-        });
-        return;
     }
-    if (session.stage === 'awaiting_city') {
-        session.city = extractCityFromMessage(cleanText) ?? cleanText;
-        session.stage = 'chatting';
+    if (session.stage === 'awaiting_city' && !session.city) {
+        const city = extractCityFromMessage(cleanText);
+        if (city) {
+            session.city = city;
+            session.stage = 'chatting';
+        }
     }
     updateSessionInsights(session, cleanText);
+    if (session.stage === 'awaiting_city' && session.city) {
+        session.stage = 'chatting';
+    }
     if (session.stage === 'chatting' && shouldStartOrderFlow(cleanText)) {
         startOrderFlow(session);
     }
@@ -117,7 +96,16 @@ const handleIncomingMessage = async ({ waId, normalizedWaId, profileName, text, 
             session.pendingFields = determineMissingFields(session.order);
         }
     }
-    const pendingField = session.pendingFields[0] ? ORDER_FIELD_LABELS[session.pendingFields[0]] : undefined;
+    let pendingField;
+    if (!session.name) {
+        pendingField = 'tu nombre para personalizar la atención';
+    }
+    else if (!session.city) {
+        pendingField = 'la ciudad donde te encuentras para coordinar entrega';
+    }
+    else if (session.pendingFields[0]) {
+        pendingField = ORDER_FIELD_LABELS[session.pendingFields[0]];
+    }
     try {
         const aiReply = await (0, openaiService_1.getChatGPTReply)(cleanText, {
             name: session.name,
@@ -278,20 +266,15 @@ const extractNameFromMessage = (message) => {
     if (explicit?.[1]) {
         return capitalizeWords(explicit[1].trim());
     }
-    const clean = message.replace(/[^a-záéíóúüñ\s]/gi, ' ').trim();
-    if (!clean) {
-        return undefined;
+    if (/^[a-záéíóúüñ]{2,}$/i.test(message.trim())) {
+        return capitalizeWords(message.trim());
     }
-    const words = clean.split(/\s+/).slice(0, 2).join(' ');
-    return capitalizeWords(words);
+    return undefined;
 };
 const extractCityFromMessage = (message) => {
     const match = message.match(/(?:de|desde|en)\s+([a-záéíóúüñ\s]+)/i);
     if (match?.[1]) {
         return capitalizeWords(match[1].trim());
-    }
-    if (message.length <= 40) {
-        return capitalizeWords(message.trim());
     }
     return undefined;
 };

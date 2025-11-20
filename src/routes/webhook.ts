@@ -62,15 +62,10 @@ const operationsPhoneNormalized = normalizePhone(env.operationsPhoneNumber);
 const getWelcomeMessage = (): string => {
   try {
     const branding = getBrandingConfig();
-    return branding.greeting || 'Hola, soy Asesor Fénix. ¿Cómo te llamas?';
+    return branding.greeting || 'Hola, soy Asesor Fénix. ¿En qué te puedo ayudar hoy?';
   } catch (error) {
-    return 'Hola, soy Asesor Fénix. ¿Cómo te llamas?';
+    return 'Hola, soy Asesor Fénix. ¿En qué te puedo ayudar hoy?';
   }
-};
-
-const buildCityPrompt = (name?: string): string => {
-  const product = getProductInfo();
-  return `Gracias${name ? ` ${name}` : ''}. ¿En qué ciudad te encuentras para coordinar entrega del ${product.name}?`;
 };
 
 interface IncomingMessagePayload {
@@ -117,46 +112,29 @@ export const handleIncomingMessage = async ({
       name: 'Asesor Fénix',
       metadata: { stage: session.stage },
     });
-    return;
   }
 
-  if (session.stage === 'awaiting_name') {
-    session.name = extractNameFromMessage(cleanText) ?? session.name ?? profileName;
-    if (!session.name) {
-      await sendTextMessage(session.waId, '¿Me compartes tu nombre para personalizar tu atención?');
-      await logConversationMessage({
-        conversationId: normalizedWaId,
-        channel: 'whatsapp',
-        direction: 'outgoing',
-        message: '¿Me compartes tu nombre para personalizar tu atención?',
-        phone: session.waId,
-        name: 'Asesor Fénix',
-        metadata: { stage: session.stage },
-      });
-      return;
+  if (session.stage === 'awaiting_name' && !session.name) {
+    const explicitName = extractNameFromMessage(cleanText);
+    if (explicitName) {
+      session.name = explicitName;
+      session.stage = session.city ? 'chatting' : 'awaiting_city';
     }
-
-    session.stage = 'awaiting_city';
-    const prompt = buildCityPrompt(session.name.split(' ')[0]);
-    await sendTextMessage(session.waId, prompt);
-    await logConversationMessage({
-      conversationId: normalizedWaId,
-      channel: 'whatsapp',
-      direction: 'outgoing',
-      message: prompt,
-      phone: session.waId,
-      name: 'Asesor Fénix',
-      metadata: { stage: session.stage },
-    });
-    return;
   }
 
-  if (session.stage === 'awaiting_city') {
-    session.city = extractCityFromMessage(cleanText) ?? cleanText;
-    session.stage = 'chatting';
+  if (session.stage === 'awaiting_city' && !session.city) {
+    const city = extractCityFromMessage(cleanText);
+    if (city) {
+      session.city = city;
+      session.stage = 'chatting';
+    }
   }
 
   updateSessionInsights(session, cleanText);
+
+  if (session.stage === 'awaiting_city' && session.city) {
+    session.stage = 'chatting';
+  }
 
   if (session.stage === 'chatting' && shouldStartOrderFlow(cleanText)) {
     startOrderFlow(session);
@@ -182,7 +160,14 @@ export const handleIncomingMessage = async ({
     }
   }
 
-  const pendingField = session.pendingFields[0] ? ORDER_FIELD_LABELS[session.pendingFields[0]] : undefined;
+  let pendingField: string | undefined;
+  if (!session.name) {
+    pendingField = 'tu nombre para personalizar la atención';
+  } else if (!session.city) {
+    pendingField = 'la ciudad donde te encuentras para coordinar entrega';
+  } else if (session.pendingFields[0]) {
+    pendingField = ORDER_FIELD_LABELS[session.pendingFields[0]];
+  }
 
   try {
     const aiReply = await getChatGPTReply(cleanText, {
@@ -364,22 +349,17 @@ const extractNameFromMessage = (message: string): string | undefined => {
     return capitalizeWords(explicit[1].trim());
   }
 
-  const clean = message.replace(/[^a-záéíóúüñ\s]/gi, ' ').trim();
-  if (!clean) {
-    return undefined;
+  if (/^[a-záéíóúüñ]{2,}$/i.test(message.trim())) {
+    return capitalizeWords(message.trim());
   }
 
-  const words = clean.split(/\s+/).slice(0, 2).join(' ');
-  return capitalizeWords(words);
+  return undefined;
 };
 
 const extractCityFromMessage = (message: string): string | undefined => {
   const match = message.match(/(?:de|desde|en)\s+([a-záéíóúüñ\s]+)/i);
   if (match?.[1]) {
     return capitalizeWords(match[1].trim());
-  }
-  if (message.length <= 40) {
-    return capitalizeWords(message.trim());
   }
   return undefined;
 };
