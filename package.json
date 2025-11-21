@@ -9,15 +9,19 @@
     "start": "node dist/index.js"
   },
   "dependencies": {
+    "@ffmpeg-installer/ffmpeg": "^1.1.0",
     "@supabase/supabase-js": "^2.83.0",
     "axios": "^1.13.2",
     "dotenv": "^17.2.3",
     "express": "^5.1.0",
+    "fluent-ffmpeg": "^2.1.2",
     "luxon": "^3.7.2",
+    "node-fetch": "^3.3.2",
     "openai": "^4.77.4"
   },
   "devDependencies": {
     "@types/express": "^5.0.5",
+    "@types/fluent-ffmpeg": "^2.1.28",
     "@types/luxon": "^3.7.1",
     "@types/node": "^20.19.25",
     "@vercel/node": "^5.5.8",

@@ -1,5 +1,10 @@
 import fs from 'fs';
 import path from 'path';
+import os from 'os';
+import { createHash } from 'crypto';
+import fetch from 'node-fetch';
+import ffmpeg from 'fluent-ffmpeg';
+import ffmpegInstaller from '@ffmpeg-installer/ffmpeg';
 import { createClient, SupabaseClient } from '@supabase/supabase-js';
 import { env } from '../config/env';
 
@@ -26,6 +31,7 @@ type StorageEntry = {
 const CACHE_TTL_MS = 5 * 60 * 1000;
 const SIGNED_URL_TTL_SECONDS = 60 * 60 * 6;
 const MAX_RECURSION_DEPTH = 5;
+const CONVERTED_MEDIA_DIR = 'converted-media';
 const mediaExtensions: Record<MediaAssetType, string[]> = {
   image: ['jpg', 'jpeg', 'png', 'webp', 'gif'],
   video: ['mp4', 'mov', 'avi', 'webm'],
@@ -34,6 +40,9 @@ const mediaExtensions: Record<MediaAssetType, string[]> = {
 const fallbackMediaPath = path.join(process.cwd(), 'data', 'mediaFallback.json');
 
 let cache: MediaCache | null = null;
+const convertedVideoCache = new Map<string, string>();
+
+ffmpeg.setFfmpegPath(ffmpegInstaller.path);
 
 const resolveTypeFromExtension = (ext: string): MediaAssetType | undefined => {
   const normalized = ext.toLowerCase();
@@ -140,13 +149,13 @@ export const listProductMedia = async (): Promise<MediaAsset[]> => {
     const filePaths = await enumerateFiles(client, basePath);
 
     const assets: MediaAsset[] = [];
-  for (const filePath of filePaths) {
-    const [, extRaw = ''] = /\.([^.]+)$/.exec(filePath) ?? [];
-    const ext = extRaw.toLowerCase();
-    const type = resolveTypeFromExtension(ext);
-    if (!type) {
-      continue;
-    }
+    for (const filePath of filePaths) {
+      const [, extRaw = ''] = /\.([^.]+)$/.exec(filePath) ?? [];
+      const ext = extRaw.toLowerCase();
+      const type = resolveTypeFromExtension(ext);
+      if (!type) {
+        continue;
+      }
 
       const url = await resolveFileUrl(client, filePath);
       if (!url) {
@@ -162,6 +171,7 @@ export const listProductMedia = async (): Promise<MediaAsset[]> => {
     }
 
     if (assets.length) {
+      await ensureVideoAssetsAreCompatible(client, assets);
       cache = { assets, expiresAt: Date.now() + CACHE_TTL_MS };
       return assets;
     }
@@ -184,5 +194,75 @@ const loadFallbackAssets = (): MediaAsset[] => {
   } catch (error) {
     console.error('No se pudo cargar data/mediaFallback.json', error);
     return [];
+  }
+};
+
+const ensureVideoAssetsAreCompatible = async (client: SupabaseClient, assets: MediaAsset[]): Promise<void> => {
+  const tasks = assets.map(async (asset) => {
+    if (asset.type !== 'video') {
+      return;
+    }
+    if (asset.extension === 'mp4') {
+      return;
+    }
+
+    const cachedUrl = convertedVideoCache.get(asset.url);
+    if (cachedUrl) {
+      asset.url = cachedUrl;
+      asset.extension = 'mp4';
+      return;
+    }
+
+    try {
+      const mp4Url = await convertVideoToMp4(client, asset);
+      if (mp4Url) {
+        convertedVideoCache.set(asset.url, mp4Url);
+        asset.url = mp4Url;
+        asset.extension = 'mp4';
+      }
+    } catch (error) {
+      console.error('No se pudo convertir el video a MP4, se enviará el original como enlace', error);
+    }
+  });
+
+  await Promise.all(tasks);
+};
+
+const convertVideoToMp4 = async (client: SupabaseClient, asset: MediaAsset): Promise<string | null> => {
+  const tempDir = await fs.promises.mkdtemp(path.join(os.tmpdir(), 'media-convert-'));
+  const inputPath = path.join(tempDir, `source.${asset.extension ?? 'mov'}`);
+  const outputPath = path.join(tempDir, 'output.mp4');
+
+  try {
+    const response = await fetch(asset.url);
+    if (!response.ok) {
+      throw new Error(`No se pudo descargar ${asset.url}: ${response.statusText}`);
+    }
+
+    const buffer = Buffer.from(await response.arrayBuffer());
+    await fs.promises.writeFile(inputPath, buffer);
+
+    await new Promise<void>((resolve, reject) => {
+      ffmpeg(inputPath)
+        .outputOptions(['-movflags', 'faststart'])
+        .format('mp4')
+        .save(outputPath)
+        .on('end', () => resolve())
+        .on('error', (error) => reject(error));
+    });
+
+    const mp4Buffer = await fs.promises.readFile(outputPath);
+    const hash = createHash('sha1').update(asset.url).digest('hex');
+    const storagePath = `${CONVERTED_MEDIA_DIR}/${hash}.mp4`;
+
+    await client.storage.from(env.supabaseMediaBucket!).upload(storagePath, mp4Buffer, {
+      upsert: true,
+      contentType: 'video/mp4',
+    });
+
+    const publicUrl = client.storage.from(env.supabaseMediaBucket!).getPublicUrl(storagePath).data?.publicUrl;
+    return publicUrl ?? asset.url;
+  } finally {
+    await fs.promises.rm(tempDir, { recursive: true, force: true });
   }
 };
