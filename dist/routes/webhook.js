@@ -156,6 +156,9 @@ const handleIncomingMessage = async ({ waId, normalizedWaId, profileName, text, 
                 session,
                 normalizedWaId,
                 isResend: resendRequested,
+                followUpMessage: !session.city
+                    ? 'Para coordinar la entrega necesito saber en qué ciudad estás (puede ser con un enlace de Maps, sin ubicación en vivo).'
+                    : undefined,
             });
         }
         if (session.stage === 'chatting' && session.cityAllowed !== false && shouldStartOrderFlow(cleanText)) {
@@ -617,6 +620,9 @@ const sendProductIntro = async (session, normalizedWaId, options) => {
             session,
             normalizedWaId,
             introMessage: 'Te dejo fotos y un video para que veas cómo lucen en el parabrisas 👇',
+            followUpMessage: !session.city
+                ? 'Para coordinar la entrega, ¿en qué ciudad estás? Si puedes, envíame un enlace de Maps (sin compartir ubicación en vivo) para tener la dirección exacta.'
+                : undefined,
         });
     }
 };
@@ -638,7 +644,7 @@ const maybeHandleCoverageNotice = async (session, normalizedWaId) => {
         session.cityNoticeSent = true;
     }
 };
-const shareProductMedia = async ({ session, normalizedWaId, isResend, introMessage, }) => {
+const shareProductMedia = async ({ session, normalizedWaId, isResend, introMessage, followUpMessage, }) => {
     const assets = await (0, mediaService_1.listProductMedia)();
     if (!assets.length) {
         const fallback = 'Aún no tengo archivos listos para compartir en este momento, pero ya pedí al equipo que los habilite y te aviso apenas estén disponibles.';
@@ -673,22 +679,6 @@ const shareProductMedia = async ({ session, normalizedWaId, isResend, introMessa
     });
     let sentAny = false;
     for (const asset of assets) {
-        if (asset.type === 'video' && !canSendVideoAsset(asset)) {
-            const linkMessage = `${asset.caption ?? 'Video demostrativo'}: ${asset.url}`;
-            await (0, whatsappService_1.sendTextMessage)(session.waId, linkMessage);
-            recordBotMessage(session, linkMessage);
-            sentAny = true;
-            await (0, conversationLogService_1.logConversationMessage)({
-                conversationId: normalizedWaId,
-                channel: 'whatsapp',
-                direction: 'outgoing',
-                message: linkMessage,
-                phone: session.waId,
-                name: 'Asesor Fénix',
-                metadata: { stage: session.stage, mediaShared: true, fallbackLink: true },
-            });
-            continue;
-        }
         try {
             await (0, whatsappService_1.sendMediaMessage)({ to: session.waId, type: asset.type, link: asset.url, caption: asset.caption });
             sentAny = true;
@@ -726,13 +716,26 @@ const shareProductMedia = async ({ session, normalizedWaId, isResend, introMessa
         await (0, whatsappService_1.sendTextMessage)(session.waId, `${notice}\n${assets.map((asset) => asset.url).join('\n')}`);
     }
     session.mediaShared = true;
+    if (followUpMessage && !session.locationPrompted) {
+        await (0, whatsappService_1.sendTextMessage)(session.waId, followUpMessage);
+        recordBotMessage(session, followUpMessage);
+        await (0, conversationLogService_1.logConversationMessage)({
+            conversationId: normalizedWaId,
+            channel: 'whatsapp',
+            direction: 'outgoing',
+            message: followUpMessage,
+            phone: session.waId,
+            name: 'Asesor Fénix',
+            metadata: { stage: session.stage, locationPrompt: true },
+        });
+        session.locationPrompted = true;
+    }
 };
 function needsMediaResend(message) {
     const normalized = message.toLowerCase();
     const resendClues = ['reenv', 'otra vez', 'no me lleg', 'no llegaron', 'no llegó', 'no recib'];
     return resendClues.some((pattern) => normalized.includes(pattern));
 }
-const SUPPORTED_VIDEO_EXTENSIONS = ['mp4', '3gp', '3gpp'];
 const BUSINESS_NAME_KEYWORDS = [
     'srl',
     's.a',
@@ -797,15 +800,6 @@ const isLikelyPersonalName = (value) => {
         return false;
     }
     return true;
-};
-const canSendVideoAsset = (asset) => {
-    if (asset.type !== 'video') {
-        return true;
-    }
-    if (!asset.extension) {
-        return true;
-    }
-    return SUPPORTED_VIDEO_EXTENSIONS.includes(asset.extension.toLowerCase());
 };
 const notifyOperationsChannel = async (message, metadata) => {
     await (0, whatsappService_1.sendTextMessage)(env_1.env.operationsPhoneNumber, message);

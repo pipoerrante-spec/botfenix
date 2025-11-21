@@ -171,8 +171,8 @@ export const handleIncomingMessage = async ({
 
     await maybeHandleCoverageNotice(session, normalizedWaId);
 
-    if (!session.introducedProduct) {
-      await sendProductIntro(session, normalizedWaId, { personalize: session.nameConfirmed });
+  if (!session.introducedProduct) {
+    await sendProductIntro(session, normalizedWaId, { personalize: session.nameConfirmed });
     }
 
     const askedForMedia = shouldShareMedia(cleanText) || isProductInterest(cleanText);
@@ -183,6 +183,9 @@ export const handleIncomingMessage = async ({
         session,
         normalizedWaId,
         isResend: resendRequested,
+        followUpMessage: !session.city
+          ? 'Para coordinar la entrega necesito saber en qué ciudad estás (puede ser con un enlace de Maps, sin ubicación en vivo).'
+          : undefined,
       });
     }
 
@@ -714,6 +717,9 @@ const sendProductIntro = async (
       session,
       normalizedWaId,
       introMessage: 'Te dejo fotos y un video para que veas cómo lucen en el parabrisas 👇',
+      followUpMessage: !session.city
+        ? 'Para coordinar la entrega, ¿en qué ciudad estás? Si puedes, envíame un enlace de Maps (sin compartir ubicación en vivo) para tener la dirección exacta.'
+        : undefined,
     });
   }
 };
@@ -742,11 +748,13 @@ const shareProductMedia = async ({
   normalizedWaId,
   isResend,
   introMessage,
+  followUpMessage,
 }: {
   session: LeadSession;
   normalizedWaId: string;
   isResend?: boolean;
   introMessage?: string;
+  followUpMessage?: string;
 }): Promise<void> => {
   const assets = await listProductMedia();
   if (!assets.length) {
@@ -785,23 +793,6 @@ const shareProductMedia = async ({
 
   let sentAny = false;
   for (const asset of assets) {
-    if (asset.type === 'video' && !canSendVideoAsset(asset)) {
-      const linkMessage = `${asset.caption ?? 'Video demostrativo'}: ${asset.url}`;
-      await sendTextMessage(session.waId, linkMessage);
-      recordBotMessage(session, linkMessage);
-      sentAny = true;
-      await logConversationMessage({
-        conversationId: normalizedWaId,
-        channel: 'whatsapp',
-        direction: 'outgoing',
-        message: linkMessage,
-        phone: session.waId,
-        name: 'Asesor Fénix',
-        metadata: { stage: session.stage, mediaShared: true, fallbackLink: true },
-      });
-      continue;
-    }
-
     try {
       await sendMediaMessage({ to: session.waId, type: asset.type, link: asset.url, caption: asset.caption });
       sentAny = true;
@@ -840,6 +831,20 @@ const shareProductMedia = async ({
   }
 
   session.mediaShared = true;
+  if (followUpMessage && !session.locationPrompted) {
+    await sendTextMessage(session.waId, followUpMessage);
+    recordBotMessage(session, followUpMessage);
+    await logConversationMessage({
+      conversationId: normalizedWaId,
+      channel: 'whatsapp',
+      direction: 'outgoing',
+      message: followUpMessage,
+      phone: session.waId,
+      name: 'Asesor Fénix',
+      metadata: { stage: session.stage, locationPrompt: true },
+    });
+    session.locationPrompted = true;
+  }
 };
 
 function needsMediaResend(message: string): boolean {
@@ -847,8 +852,6 @@ function needsMediaResend(message: string): boolean {
   const resendClues = ['reenv', 'otra vez', 'no me lleg', 'no llegaron', 'no llegó', 'no recib'];
   return resendClues.some((pattern) => normalized.includes(pattern));
 }
-
-const SUPPORTED_VIDEO_EXTENSIONS = ['mp4', '3gp', '3gpp'];
 
 const BUSINESS_NAME_KEYWORDS = [
   'srl',
@@ -922,17 +925,6 @@ const isLikelyPersonalName = (value: string): boolean => {
   return true;
 };
 
-const canSendVideoAsset = (asset: MediaAsset): boolean => {
-  if (asset.type !== 'video') {
-    return true;
-  }
-
-  if (!asset.extension) {
-    return true;
-  }
-
-  return SUPPORTED_VIDEO_EXTENSIONS.includes(asset.extension.toLowerCase());
-};
 
 const notifyOperationsChannel = async (message: string, metadata?: Record<string, unknown>): Promise<void> => {
   await sendTextMessage(env.operationsPhoneNumber, message);

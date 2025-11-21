@@ -32,6 +32,7 @@ const materializeSession = (normalizedWaId, waId, snapshot) => {
         pendingFields: snapshot.pendingFields ?? [],
         order: snapshot.order,
         mediaShared: snapshot.mediaShared ?? false,
+        locationPrompted: snapshot.locationPrompted ?? false,
         introducedProduct: snapshot.introducedProduct ?? false,
     };
 };
@@ -78,6 +79,7 @@ const buildSnapshot = (session) => {
         pendingFields: session.pendingFields,
         order: session.order,
         mediaShared: session.mediaShared ?? false,
+        locationPrompted: session.locationPrompted ?? false,
         introducedProduct: session.introducedProduct ?? false,
     };
 };
@@ -100,6 +102,7 @@ const ensureLeadSession = async (params) => {
             nameConfirmed: false,
             pendingFields: [],
             mediaShared: false,
+            locationPrompted: false,
             introducedProduct: false,
         };
         cacheSession(session);
