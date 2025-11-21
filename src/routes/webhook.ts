@@ -10,6 +10,7 @@ import { listProductMedia, MediaAsset } from '../services/mediaService';
 import { WhatsAppWebhookRequestBody, WhatsAppTextMessage, WhatsAppContact } from '../types/whatsapp';
 import { ensureLeadSession, saveLeadSession, findLeadSession } from '../services/leadSessionStore';
 import { LeadSession, LeadStage, OrderDraft, OrderField } from '../types/leadSession';
+import { getShippingConfidenceMessage } from '../config/shipping';
 
 const router = Router();
 
@@ -876,11 +877,17 @@ const sendProductIntro = async (
 };
 
 const maybeHandleCoverageNotice = async (session: LeadSession, normalizedWaId: string): Promise<boolean> => {
-  if (session.city && session.cityAllowed === false && !session.cityNoticeSent) {
-    const coverageList = formatCoverageList();
-    const city = session.city;
-    const nameHook = session.name ? ` ${session.name}` : '';
-    const notice = `Perfecto${nameHook}, sí hacemos entregas en ${city}. En ${coverageList} entregamos en el día; para ${city} gestionamos un envío que tarda entre 24 y 48 horas y solo necesitas cubrir el costo del envío 🚚✨. ¿Te parece si avanzamos con los datos para coordinarlo?`;
+  if (!session.city || session.cityNoticeSent) {
+    return false;
+  }
+
+  const coverageList = formatCoverageList();
+  const city = session.city;
+  const nameHook = session.name ? ` ${session.name}` : '';
+
+  if (session.cityAllowed === false) {
+    const shipping = getShippingConfidenceMessage(city);
+    const notice = `Perfecto${nameHook}, sí hacemos entregas en ${city}. En ${coverageList} tenemos sucursales con envío gratis; para ${city} gestionamos un envío por encomienda que tarda entre 24 y 48 horas. ${shipping.providerLine}. ${shipping.testimonial} ¿Te parece si avanzamos con los datos para coordinarlo?`;
     await sendTextMessage(session.waId, notice);
     recordBotMessage(session, notice);
     await logConversationMessage({
@@ -895,7 +902,21 @@ const maybeHandleCoverageNotice = async (session: LeadSession, normalizedWaId: s
     session.cityNoticeSent = true;
     return true;
   }
-  return false;
+
+  const localNotice = `¡Genial${nameHook}! ${city} está dentro de nuestras sucursales, así que el envío es gratis y entregamos en el día 🚚💨. También puedes visitarnos de lunes a sábado entre 08:30 y 18:30 si prefieres retirar. ¿Seguimos con los datos para agendarlo?`;
+  await sendTextMessage(session.waId, localNotice);
+  recordBotMessage(session, localNotice);
+  await logConversationMessage({
+    conversationId: normalizedWaId,
+    channel: 'whatsapp',
+    direction: 'outgoing',
+    message: localNotice,
+    phone: session.waId,
+    name: 'Asesor Fénix',
+    metadata: { stage: session.stage, coverage: true },
+  });
+  session.cityNoticeSent = true;
+  return true;
 };
 
 const isStoreVisitQuestion = (message: string): boolean => {
