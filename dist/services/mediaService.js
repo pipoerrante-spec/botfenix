@@ -8,7 +8,6 @@ const fs_1 = __importDefault(require("fs"));
 const path_1 = __importDefault(require("path"));
 const os_1 = __importDefault(require("os"));
 const crypto_1 = require("crypto");
-const node_fetch_1 = __importDefault(require("node-fetch"));
 const fluent_ffmpeg_1 = __importDefault(require("fluent-ffmpeg"));
 const ffmpeg_1 = __importDefault(require("@ffmpeg-installer/ffmpeg"));
 const supabase_js_1 = require("@supabase/supabase-js");
@@ -24,6 +23,16 @@ const mediaExtensions = {
 const fallbackMediaPath = path_1.default.join(process.cwd(), 'data', 'mediaFallback.json');
 let cache = null;
 const convertedVideoCache = new Map();
+let cachedFetch = null;
+const dynamicImport = new Function('modulePath', 'return import(modulePath);');
+const loadFetch = async () => {
+    if (cachedFetch) {
+        return cachedFetch;
+    }
+    const mod = (await dynamicImport('node-fetch'));
+    cachedFetch = mod.default;
+    return cachedFetch;
+};
 fluent_ffmpeg_1.default.setFfmpegPath(ffmpeg_1.default.path);
 const resolveTypeFromExtension = (ext) => {
     const normalized = ext.toLowerCase();
@@ -184,7 +193,8 @@ const convertVideoToMp4 = async (client, asset) => {
     const inputPath = path_1.default.join(tempDir, `source.${asset.extension ?? 'mov'}`);
     const outputPath = path_1.default.join(tempDir, 'output.mp4');
     try {
-        const response = await (0, node_fetch_1.default)(asset.url);
+        const fetch = await loadFetch();
+        const response = await fetch(asset.url);
         if (!response.ok) {
             throw new Error(`No se pudo descargar ${asset.url}: ${response.statusText}`);
         }

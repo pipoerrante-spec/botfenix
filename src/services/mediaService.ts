@@ -2,7 +2,6 @@ import fs from 'fs';
 import path from 'path';
 import os from 'os';
 import { createHash } from 'crypto';
-import fetch from 'node-fetch';
 import ffmpeg from 'fluent-ffmpeg';
 import ffmpegInstaller from '@ffmpeg-installer/ffmpeg';
 import { createClient, SupabaseClient } from '@supabase/supabase-js';
@@ -41,6 +40,21 @@ const fallbackMediaPath = path.join(process.cwd(), 'data', 'mediaFallback.json')
 
 let cache: MediaCache | null = null;
 const convertedVideoCache = new Map<string, string>();
+type FetchModule = typeof import('node-fetch');
+type FetchFn = FetchModule['default'];
+let cachedFetch: FetchFn | null = null;
+const dynamicImport = new Function('modulePath', 'return import(modulePath);') as (
+  modulePath: string,
+) => Promise<unknown>;
+
+const loadFetch = async (): Promise<FetchFn> => {
+  if (cachedFetch) {
+    return cachedFetch;
+  }
+  const mod = (await dynamicImport('node-fetch')) as FetchModule;
+  cachedFetch = mod.default;
+  return cachedFetch;
+};
 
 ffmpeg.setFfmpegPath(ffmpegInstaller.path);
 
@@ -234,6 +248,7 @@ const convertVideoToMp4 = async (client: SupabaseClient, asset: MediaAsset): Pro
   const outputPath = path.join(tempDir, 'output.mp4');
 
   try {
+    const fetch = await loadFetch();
     const response = await fetch(asset.url);
     if (!response.ok) {
       throw new Error(`No se pudo descargar ${asset.url}: ${response.statusText}`);
