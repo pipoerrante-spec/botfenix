@@ -169,7 +169,10 @@ export const handleIncomingMessage = async ({
 
     updateSessionInsights(session, cleanText);
 
-    await maybeHandleCoverageNotice(session, normalizedWaId);
+    const coverageNoticeSent = await maybeHandleCoverageNotice(session, normalizedWaId);
+    if (coverageNoticeSent) {
+      return;
+    }
 
   if (!session.introducedProduct) {
     await sendProductIntro(session, normalizedWaId, { personalize: session.nameConfirmed });
@@ -724,7 +727,7 @@ const sendProductIntro = async (
   }
 };
 
-const maybeHandleCoverageNotice = async (session: LeadSession, normalizedWaId: string): Promise<void> => {
+const maybeHandleCoverageNotice = async (session: LeadSession, normalizedWaId: string): Promise<boolean> => {
   if (session.city && session.cityAllowed === false && !session.cityNoticeSent) {
     const coverageList = formatCoverageList();
     const city = session.city;
@@ -742,7 +745,9 @@ const maybeHandleCoverageNotice = async (session: LeadSession, normalizedWaId: s
       metadata: { stage: session.stage, coverage: true },
     });
     session.cityNoticeSent = true;
+    return true;
   }
+  return false;
 };
 
 const shareProductMedia = async ({
@@ -795,6 +800,22 @@ const shareProductMedia = async ({
 
   let sentAny = false;
   for (const asset of assets) {
+    if (asset.type === 'video' && asset.extension && asset.extension !== 'mp4') {
+      const fallbackText = `Te dejo el video para que lo veas desde este enlace: ${asset.url}`;
+      await sendTextMessage(session.waId, fallbackText);
+      recordBotMessage(session, fallbackText);
+      sentAny = true;
+      await logConversationMessage({
+        conversationId: normalizedWaId,
+        channel: 'whatsapp',
+        direction: 'outgoing',
+        message: fallbackText,
+        phone: session.waId,
+        name: 'Asesor Fénix',
+        metadata: { stage: session.stage, mediaShared: true, videoFallback: true },
+      });
+      continue;
+    }
     try {
       await sendMediaMessage({ to: session.waId, type: asset.type, link: asset.url, caption: asset.caption });
       sentAny = true;

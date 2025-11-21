@@ -144,7 +144,10 @@ const handleIncomingMessage = async ({ waId, normalizedWaId, profileName, text, 
             }
         }
         updateSessionInsights(session, cleanText);
-        await maybeHandleCoverageNotice(session, normalizedWaId);
+        const coverageNoticeSent = await maybeHandleCoverageNotice(session, normalizedWaId);
+        if (coverageNoticeSent) {
+            return;
+        }
         if (!session.introducedProduct) {
             await sendProductIntro(session, normalizedWaId, { personalize: session.nameConfirmed });
         }
@@ -641,7 +644,9 @@ const maybeHandleCoverageNotice = async (session, normalizedWaId) => {
             metadata: { stage: session.stage, coverage: true },
         });
         session.cityNoticeSent = true;
+        return true;
     }
+    return false;
 };
 const shareProductMedia = async ({ session, normalizedWaId, isResend, introMessage, followUpMessage, }) => {
     const assets = await (0, mediaService_1.listProductMedia)();
@@ -678,6 +683,22 @@ const shareProductMedia = async ({ session, normalizedWaId, isResend, introMessa
     });
     let sentAny = false;
     for (const asset of assets) {
+        if (asset.type === 'video' && asset.extension && asset.extension !== 'mp4') {
+            const fallbackText = `Te dejo el video para que lo veas desde este enlace: ${asset.url}`;
+            await (0, whatsappService_1.sendTextMessage)(session.waId, fallbackText);
+            recordBotMessage(session, fallbackText);
+            sentAny = true;
+            await (0, conversationLogService_1.logConversationMessage)({
+                conversationId: normalizedWaId,
+                channel: 'whatsapp',
+                direction: 'outgoing',
+                message: fallbackText,
+                phone: session.waId,
+                name: 'Asesor Fénix',
+                metadata: { stage: session.stage, mediaShared: true, videoFallback: true },
+            });
+            continue;
+        }
         try {
             await (0, whatsappService_1.sendMediaMessage)({ to: session.waId, type: asset.type, link: asset.url, caption: asset.caption });
             sentAny = true;
