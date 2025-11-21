@@ -189,7 +189,7 @@ export const handleIncomingMessage = async ({
       });
     }
 
-    if (session.stage === 'chatting' && session.cityAllowed !== false && shouldStartOrderFlow(cleanText)) {
+    if (session.stage === 'chatting' && shouldStartOrderFlow(cleanText)) {
       startOrderFlow(session);
     }
 
@@ -216,8 +216,6 @@ export const handleIncomingMessage = async ({
     let pendingField: string | undefined;
     if (!session.nameConfirmed) {
       pendingField = 'tu nombre para personalizar la atención';
-    } else if (session.cityAllowed === false) {
-      pendingField = `una ciudad dentro de nuestra cobertura (${formatCoverageList()})`;
     } else if ((session.stage === 'collecting_order' || session.stage === 'awaiting_confirmation') && !session.city) {
       pendingField = 'el enlace de ubicación (sin compartir ubicación en vivo) o la ciudad exacta para coordinar la entrega';
     } else if (session.pendingFields[0]) {
@@ -230,8 +228,10 @@ export const handleIncomingMessage = async ({
       `Ciudad cliente: ${session.city ?? 'sin definir'}`,
       `Hora local (Bolivia): ${laPazNow.setLocale('es').toFormat('EEEE dd HH:mm')}`,
     ];
-    if (session.cityAllowed === false) {
-      contextParts.push(`El cliente está fuera de cobertura (permitidas: ${formatCoverageList()})`);
+    if (session.city && session.cityAllowed === false) {
+      contextParts.push(
+        `Ciudad fuera de entrega en el día (24-48h con envío; same-day en ${formatCoverageList()})`,
+      );
     }
     if (session.interests?.length) {
       contextParts.push(`Intereses mencionados: ${session.interests.join(', ')}`);
@@ -727,7 +727,9 @@ const sendProductIntro = async (
 const maybeHandleCoverageNotice = async (session: LeadSession, normalizedWaId: string): Promise<void> => {
   if (session.city && session.cityAllowed === false && !session.cityNoticeSent) {
     const coverageList = formatCoverageList();
-    const notice = `Por ahora realizamos entregas en ${coverageList}. ¿Puedes compartir una dirección o punto de entrega dentro de esas ciudades?`;
+    const city = session.city;
+    const nameHook = session.name ? ` ${session.name}` : '';
+    const notice = `Perfecto${nameHook}, sí hacemos entregas en ${city}. En ${coverageList} entregamos en el día; para ${city} gestionamos un envío que tarda entre 24 y 48 horas y solo necesitas cubrir el costo del envío. ¿Te parece si avanzamos con los datos para coordinarlo?`;
     await sendTextMessage(session.waId, notice);
     recordBotMessage(session, notice);
     await logConversationMessage({
