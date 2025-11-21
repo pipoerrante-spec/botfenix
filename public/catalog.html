@@ -396,6 +396,9 @@
     </main>
     <div class="toast" id="toast">Guardado</div>
     <script>
+      const API_BASE = window.location.origin?.startsWith('http') ? '' : 'http://localhost:3000';
+      const apiFetch = (path, options = {}) => fetch(`${API_BASE}${path}`, options);
+
       const state = {
         products: [],
         activeProductId: null,
@@ -519,7 +522,7 @@
 
       const loadCatalog = async () => {
         try {
-          const response = await fetch('/api/catalog/products');
+          const response = await apiFetch('/api/catalog/products');
           if (!response.ok) throw new Error('No pude cargar el catálogo');
           const catalog = await response.json();
           state.products = catalog.products ?? [];
@@ -550,7 +553,7 @@
           : '/api/catalog/products';
         const method = state.currentProductId ? 'PUT' : 'POST';
         try {
-          const response = await fetch(path, {
+          const response = await apiFetch(path, {
             method,
             headers: { 'Content-Type': 'application/json' },
             body: JSON.stringify(payload),
@@ -580,7 +583,7 @@
         }
         if (!confirm('¿Eliminar este producto?')) return;
         try {
-          const response = await fetch(`/api/catalog/products/${state.currentProductId}`, { method: 'DELETE' });
+          const response = await apiFetch(`/api/catalog/products/${state.currentProductId}`, { method: 'DELETE' });
           if (!response.ok) {
             const error = await response.json().catch(() => ({}));
             throw new Error(error.error || 'No se pudo eliminar');
@@ -599,7 +602,7 @@
           return;
         }
         try {
-          const response = await fetch(`/api/catalog/products/${state.currentProductId}/activate`, { method: 'POST' });
+          const response = await apiFetch(`/api/catalog/products/${state.currentProductId}/activate`, { method: 'POST' });
           if (!response.ok) {
             const error = await response.json().catch(() => ({}));
             throw new Error(error.error || 'No se pudo activar');
@@ -625,7 +628,7 @@
         formData.append('file', file);
         formData.append('caption', mediaCaptionInput.value || '');
         try {
-          const response = await fetch(`/api/catalog/products/${state.currentProductId}/media/upload`, {
+          const response = await apiFetch(`/api/catalog/products/${state.currentProductId}/media/upload`, {
             method: 'POST',
             body: formData,
           });
@@ -646,10 +649,9 @@
         if (!state.currentProductId) return;
         if (!confirm('¿Eliminar este archivo?')) return;
         try {
-          const response = await fetch(
-            `/api/catalog/products/${state.currentProductId}/media/${mediaId}`,
-            { method: 'DELETE' },
-          );
+          const response = await apiFetch(`/api/catalog/products/${state.currentProductId}/media/${mediaId}`, {
+            method: 'DELETE',
+          });
           if (!response.ok) {
             const error = await response.json().catch(() => ({}));
             throw new Error(error.error || 'No se pudo eliminar');
@@ -660,6 +662,10 @@
           showToast(error.message);
         }
       };
+
+      if (API_BASE) {
+        showToast('Usando API local (http://localhost:3000). Asegúrate de tener el servidor encendido.');
+      }
 
       loadCatalog();
     </script>

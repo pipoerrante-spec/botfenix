@@ -19,6 +19,7 @@ const PREPARATION_HOURS = 2;
 const DELIVERY_WINDOW_HOURS = 2;
 const SUPPORTED_CITIES = ['cochabamba', 'la paz', 'el alto', 'santa cruz', 'sucre'];
 const MEDIA_KEYWORDS = ['foto', 'imagen', 'video', 'demo', 'mostrar', 'ver', 'clip'];
+const STORE_VISIT_KEYWORDS = ['tienda', 'sucursal', 'local', 'showroom', 'visitar', 'visita', 'ubicados', 'dónde están'];
 const ORDER_FIELD_LABELS = {
     quantity: 'la cantidad exacta que desea',
     deliveryTime: 'una ventana de 2 horas (ej. entre 10:00 y 12:00) para la entrega',
@@ -149,6 +150,10 @@ const handleIncomingMessage = async ({ waId, normalizedWaId, profileName, text, 
         if (coverageNoticeSent) {
             return;
         }
+        if (isStoreVisitQuestion(cleanText)) {
+            await sendStoreVisitDetails(session, normalizedWaId);
+            return;
+        }
         if (!session.introducedProduct) {
             await sendProductIntro(session, normalizedWaId, { personalize: session.nameConfirmed });
         }
@@ -210,6 +215,7 @@ const handleIncomingMessage = async ({ waId, normalizedWaId, profileName, text, 
         if (session.order) {
             contextParts.push(`Pedido: ${session.order.quantity ?? '?'} x ${session.order.productName} (${session.order.currency} ${session.order.price}) - estado ${session.order.status}`);
         }
+        contextParts.push(`Sucursales con envío gratis: ${formatCoverageList()}. Fuera de esas ciudades enviamos por encomienda en 24-48h y el cliente cubre el costo de envío.`);
         const historySnippet = session.history.slice(-8).join('\n');
         const aiInput = `${contextParts.join('\n')}\n\nHistorial reciente:\n${historySnippet}\n\nNuevo mensaje del cliente: ${cleanText}`;
         try {
@@ -619,6 +625,7 @@ const buildContextNotes = (session) => {
         }
     }
     notes.push(`Media compartida: ${session.mediaShared ? 'sí' : 'no'}`);
+    notes.push(`Política de envíos -> Ciudades con sucursal (${formatCoverageList()}) tienen envío gratis misma jornada; otras ciudades reciben por encomienda 24-48h y el cliente cubre envío.`);
     return notes;
 };
 const sendProductIntro = async (session, normalizedWaId, options) => {
@@ -683,6 +690,27 @@ const maybeHandleCoverageNotice = async (session, normalizedWaId) => {
         return true;
     }
     return false;
+};
+const isStoreVisitQuestion = (message) => {
+    const normalized = message.toLowerCase();
+    return STORE_VISIT_KEYWORDS.some((keyword) => normalized.includes(keyword));
+};
+const sendStoreVisitDetails = async (session, normalizedWaId) => {
+    const storeList = ['La Paz', 'El Alto', 'Cochabamba', 'Sucre', 'Santa Cruz']
+        .map((city) => `• ${city}`)
+        .join('\n');
+    const text = `¡Claro! Contamos con puntos de entrega donde puedes visitarnos en:\n${storeList}\n\nAbrimos de lunes a sábado entre 08:30 y 18:30. ¿Te gustaría que te reserve un espacio o prefieres coordinar el envío?`;
+    await (0, whatsappService_1.sendTextMessage)(session.waId, text);
+    recordBotMessage(session, text);
+    await (0, conversationLogService_1.logConversationMessage)({
+        conversationId: normalizedWaId,
+        channel: 'whatsapp',
+        direction: 'outgoing',
+        message: text,
+        phone: session.waId,
+        name: 'Asesor Fénix',
+        metadata: { stage: session.stage, storeVisit: true },
+    });
 };
 const shareProductMedia = async ({ session, normalizedWaId, isResend, introMessage, followUpMessage, }) => {
     const assets = await (0, mediaService_1.listProductMedia)();

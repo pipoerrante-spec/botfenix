@@ -1,4 +1,25 @@
 {
   "activeProductId": null,
-  "products": []
+  "products": [
+    {
+      "name": "Test",
+      "sku": "SKU1",
+      "price": 100,
+      "currency": "BOB",
+      "shortDescription": "desc",
+      "highlights": [
+        "h1"
+      ],
+      "materials": [
+        "m1"
+      ],
+      "packageIncludes": "todo",
+      "deliveryPromise": "24h",
+      "pitch": "pitch",
+      "id": "fbcfa6d5-2a44-4663-9aaa-11e22fad282e",
+      "createdAt": "2025-11-21T18:50:22.503Z",
+      "updatedAt": "2025-11-21T18:50:22.503Z",
+      "media": []
+    }
+  ]
 }
