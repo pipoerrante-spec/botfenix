@@ -64,6 +64,102 @@
         overflow: hidden;
       }
 
+      .conv-header {
+        display: flex;
+        justify-content: space-between;
+        align-items: flex-start;
+        gap: 16px;
+        flex-wrap: wrap;
+        margin-bottom: 18px;
+      }
+
+      .conversation-list {
+        display: flex;
+        flex-direction: column;
+        gap: 12px;
+      }
+
+      .conversation-row {
+        border: 1px solid rgba(255, 255, 255, 0.06);
+        border-radius: 16px;
+        padding: 12px 16px;
+        background: rgba(255, 255, 255, 0.02);
+      }
+
+      .conversation-main {
+        display: flex;
+        justify-content: space-between;
+        gap: 12px;
+        align-items: flex-start;
+      }
+
+      .conv-id {
+        font-weight: 600;
+        margin-bottom: 4px;
+      }
+
+      .conv-message {
+        color: var(--muted);
+        font-size: 0.9rem;
+      }
+
+      .conv-tags {
+        display: flex;
+        gap: 8px;
+        flex-wrap: wrap;
+      }
+
+      .tag {
+        padding: 4px 10px;
+        border-radius: 999px;
+        font-size: 0.75rem;
+        text-transform: uppercase;
+        letter-spacing: 0.08em;
+      }
+
+      .tag-funnel.descubrimiento {
+        background: rgba(59, 130, 246, 0.15);
+        color: #60a5fa;
+      }
+      .tag-funnel.negociacion {
+        background: rgba(234, 179, 8, 0.2);
+        color: #facc15;
+      }
+      .tag-funnel.coordinacion {
+        background: rgba(45, 212, 191, 0.2);
+        color: #5eead4;
+      }
+      .tag-funnel.ganada {
+        background: rgba(34, 197, 94, 0.2);
+        color: #4ade80;
+      }
+
+      .tag-log.por_asignar {
+        background: rgba(148, 163, 184, 0.2);
+        color: #cbd5f5;
+      }
+      .tag-log.en_gestion {
+        background: rgba(249, 115, 22, 0.2);
+        color: #fb923c;
+      }
+      .tag-log.en_transito {
+        background: rgba(14, 165, 233, 0.2);
+        color: #38bdf8;
+      }
+      .tag-log.entregado {
+        background: rgba(16, 185, 129, 0.2);
+        color: #34d399;
+      }
+
+      .conversation-meta {
+        margin-top: 10px;
+        display: flex;
+        gap: 14px;
+        flex-wrap: wrap;
+        font-size: 0.8rem;
+        color: var(--muted);
+      }
+
       .stat-grid {
         display: grid;
         grid-template-columns: repeat(auto-fit, minmax(120px, 1fr));
@@ -203,6 +299,56 @@
         </div>
         <div class="empty-state" id="logs-empty" style="display: none">Sin interacciones recientes.</div>
       </section>
+
+      <section class="card logs-card" style="flex: 1 1 100%">
+        <div class="conv-header">
+          <div>
+            <h2 style="margin: 0">Conversaciones</h2>
+            <p style="color: var(--muted); margin: 4px 0 0">Resumen agrupado por cliente para ver el estado del funnel.</p>
+          </div>
+          <div class="filters">
+            <label>
+              Funnel
+              <select id="conv-funnel-filter">
+                <option value="all">Todos</option>
+                <option value="descubrimiento">Descubrimiento</option>
+                <option value="negociacion">En negociación</option>
+                <option value="coordinacion">Coordinando envío</option>
+                <option value="ganada">Ganadas</option>
+              </select>
+            </label>
+            <label>
+              Logística
+              <select id="conv-log-filter">
+                <option value="all">Todos</option>
+                <option value="por_asignar">Por asignar</option>
+                <option value="en_gestion">En gestión</option>
+                <option value="en_transito">En tránsito</option>
+                <option value="entregado">Entregado</option>
+              </select>
+            </label>
+            <label>
+              Canal
+              <select id="conv-channel-filter">
+                <option value="all">Todos</option>
+                <option value="whatsapp">WhatsApp</option>
+                <option value="web">Web</option>
+                <option value="operations">Operaciones</option>
+              </select>
+            </label>
+            <label>
+              Conversaciones
+              <select id="conv-limit">
+                <option value="25">25</option>
+                <option value="50" selected>50</option>
+                <option value="100">100</option>
+              </select>
+            </label>
+          </div>
+        </div>
+        <div id="conversation-list" class="conversation-list"></div>
+        <div class="empty-state" id="conv-empty" style="display: none">No hay conversaciones con ese filtro.</div>
+      </section>
     </main>
 
     <script>
@@ -216,6 +362,12 @@
       const logsEmpty = document.getElementById('logs-empty');
       const channelFilter = document.getElementById('channel-filter');
       const limitFilter = document.getElementById('limit-filter');
+      const conversationList = document.getElementById('conversation-list');
+      const convEmpty = document.getElementById('conv-empty');
+      const convFunnelFilter = document.getElementById('conv-funnel-filter');
+      const convLogFilter = document.getElementById('conv-log-filter');
+      const convChannelFilter = document.getElementById('conv-channel-filter');
+      const convLimit = document.getElementById('conv-limit');
 
       const fetchStats = async () => {
         try {
@@ -282,6 +434,72 @@
       channelFilter.addEventListener('change', fetchLogs);
       limitFilter.addEventListener('change', fetchLogs);
 
+      const renderConversations = (conversations) => {
+        conversationList.innerHTML = '';
+        convEmpty.style.display = conversations.length ? 'none' : 'block';
+        conversations.forEach((item) => {
+          const wrapper = document.createElement('div');
+          wrapper.className = 'conversation-row';
+          wrapper.innerHTML = `
+            <div class="conversation-main">
+              <div>
+                <div class="conv-id">${item.name ?? item.phone ?? item.conversationId}</div>
+                <div class="conv-message">${item.lastMessage}</div>
+              </div>
+              <div class="conv-tags">
+                <span class="tag tag-funnel ${item.funnelStage}">${funnelLabels[item.funnelStage]}</span>
+                <span class="tag tag-log ${item.logisticsState}">${logisticsLabels[item.logisticsState]}</span>
+              </div>
+            </div>
+            <div class="conversation-meta">
+              <span>Canal: ${item.lastChannel}</span>
+              <span>Dirección: ${item.lastDirection}</span>
+              <span>Último: ${new Date(item.lastActivity).toLocaleString()}</span>
+              <span>Total mensajes: ${item.totalMessages}</span>
+            </div>
+          `;
+          conversationList.appendChild(wrapper);
+        });
+      };
+
+      const funnelLabels = {
+        descubrimiento: 'Descubrimiento',
+        negociacion: 'En negociación',
+        coordinacion: 'Coordinando envío',
+        ganada: 'Ganada',
+      };
+
+      const logisticsLabels = {
+        por_asignar: 'Por asignar',
+        en_gestion: 'En gestión',
+        en_transito: 'En tránsito',
+        entregado: 'Entregado',
+      };
+
+      const fetchConversations = async () => {
+        const params = new URLSearchParams();
+        params.set('limit', convLimit.value);
+        if (convFunnelFilter.value !== 'all') params.set('funnel', convFunnelFilter.value);
+        if (convChannelFilter.value !== 'all') params.set('channel', convChannelFilter.value);
+        try {
+          const response = await fetch(`${apiOrigin}/api/dashboard/conversations?${params.toString()}`);
+          if (!response.ok) throw new Error('Error convers');
+          let conversations = await response.json();
+          if (convLogFilter.value !== 'all') {
+            conversations = conversations.filter((item) => item.logisticsState === convLogFilter.value);
+          }
+          renderConversations(conversations);
+        } catch (error) {
+          conversationList.innerHTML = '';
+          convEmpty.style.display = 'block';
+          convEmpty.textContent = 'No pude cargar las conversaciones.';
+        }
+      };
+
+      [convFunnelFilter, convLogFilter, convChannelFilter, convLimit].forEach((el) =>
+        el.addEventListener('change', fetchConversations),
+      );
+
       if (window.location.protocol === 'file:') {
         const notice = document.createElement('p');
         notice.textContent = `Trabajando contra ${apiOrigin}. Asegúrate de tener el servidor encendido para ver datos.`;
@@ -292,7 +510,9 @@
 
       fetchStats();
       fetchLogs();
+      fetchConversations();
       setInterval(fetchLogs, 15000);
+      setInterval(fetchConversations, 20000);
     </script>
   </body>
 </html>

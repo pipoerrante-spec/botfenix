@@ -17,7 +17,7 @@ export interface ConversationLogEntry {
   metadata?: Record<string, unknown>;
 }
 
-interface StoredLogRow {
+export interface StoredLogRow {
   id: string;
   conversation_id: string;
   channel: ConversationChannel;
