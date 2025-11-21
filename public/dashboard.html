@@ -206,6 +206,11 @@
     </main>
 
     <script>
+      const apiOrigin =
+        window.location.origin && window.location.origin.startsWith('http')
+          ? window.location.origin
+          : 'http://localhost:3000';
+
       const statsGrid = document.getElementById('stats-grid');
       const logsBody = document.getElementById('logs-body');
       const logsEmpty = document.getElementById('logs-empty');
@@ -214,7 +219,7 @@
 
       const fetchStats = async () => {
         try {
-          const response = await fetch('/api/dashboard/stats');
+          const response = await fetch(`${apiOrigin}/api/dashboard/stats`);
           if (!response.ok) throw new Error('Error stats');
           const stats = await response.json();
           renderStats(stats);
@@ -241,7 +246,7 @@
       const fetchLogs = async () => {
         const limit = limitFilter.value;
         const channel = channelFilter.value;
-        const url = new URL('/api/dashboard/logs', window.location.origin);
+        const url = new URL('/api/dashboard/logs', apiOrigin);
         url.searchParams.set('limit', limit);
         try {
           const response = await fetch(url.toString());
@@ -276,6 +281,14 @@
 
       channelFilter.addEventListener('change', fetchLogs);
       limitFilter.addEventListener('change', fetchLogs);
+
+      if (window.location.protocol === 'file:') {
+        const notice = document.createElement('p');
+        notice.textContent = `Trabajando contra ${apiOrigin}. Asegúrate de tener el servidor encendido para ver datos.`;
+        notice.style.color = 'var(--muted)';
+        notice.style.marginTop = '12px';
+        document.querySelector('header')?.appendChild(notice);
+      }
 
       fetchStats();
       fetchLogs();

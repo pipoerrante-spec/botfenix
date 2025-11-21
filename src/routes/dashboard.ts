@@ -1,22 +1,30 @@
 import { Router, Request, Response } from 'express';
 import { env } from '../config/env';
 import { createClient } from '@supabase/supabase-js';
+import { getLocalConversationLogs, getLocalConversationStats } from '../services/conversationLogService';
 
 const router = Router();
 
+const hasSupabase = (): boolean => Boolean(env.supabase?.url && env.supabase?.serviceRoleKey);
+
 const requireSupabase = () => {
-  if (!env.supabase?.url || !env.supabase?.serviceRoleKey) {
+  if (!hasSupabase()) {
     throw new Error('Supabase no está configurado');
   }
-  return createClient(env.supabase.url, env.supabase.serviceRoleKey, {
+  return createClient(env.supabase!.url, env.supabase!.serviceRoleKey, {
     auth: { autoRefreshToken: false, persistSession: false },
   });
 };
 
 router.get('/logs', async (req: Request, res: Response) => {
+  const limit = Math.min(Number(req.query.limit) || 50, 500);
+  if (!hasSupabase()) {
+    const localLogs = getLocalConversationLogs(limit);
+    return res.json(localLogs);
+  }
+
   try {
     const client = requireSupabase();
-    const limit = Math.min(Number(req.query.limit) || 50, 500);
     const { data, error } = await client
       .from('conversation_logs')
       .select('*')
@@ -28,11 +36,19 @@ router.get('/logs', async (req: Request, res: Response) => {
     return res.json(data);
   } catch (error) {
     console.error('Error cargando logs', error);
+    const localLogs = getLocalConversationLogs(limit);
+    if (localLogs.length) {
+      return res.json(localLogs);
+    }
     return res.status(500).json({ error: 'No se pudieron cargar los logs' });
   }
 });
 
 router.get('/stats', async (_req: Request, res: Response) => {
+  if (!hasSupabase()) {
+    return res.json(getLocalConversationStats());
+  }
+
   try {
     const client = requireSupabase();
 
@@ -59,7 +75,7 @@ router.get('/stats', async (_req: Request, res: Response) => {
     });
   } catch (error) {
     console.error('Error cargando stats', error);
-    return res.status(500).json({ error: 'No se pudieron cargar las estadísticas' });
+    return res.json(getLocalConversationStats());
   }
 });
 

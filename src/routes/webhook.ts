@@ -21,6 +21,9 @@ const DELIVERY_WINDOW_HOURS = 2;
 const SUPPORTED_CITIES = ['cochabamba', 'la paz', 'el alto', 'santa cruz', 'sucre'];
 const MEDIA_KEYWORDS = ['foto', 'imagen', 'video', 'demo', 'mostrar', 'ver', 'clip'];
 const STORE_VISIT_KEYWORDS = ['tienda', 'sucursal', 'local', 'showroom', 'visitar', 'visita', 'ubicados', 'dónde están'];
+const DISCOUNT_KEYWORDS = ['descuento', 'rebaja', 'precio especial', 'precio mejor', 'promo', 'oferta', 'rebajar', 'más barato', 'mas barato'];
+const MAX_DISCOUNT_PER_UNIT = 5;
+const MAX_DISCOUNT_UNITS = 3;
 
 const ORDER_FIELD_LABELS: Record<OrderField, string> = {
   quantity: 'la cantidad exacta que desea',
@@ -32,7 +35,7 @@ const ORDER_KEYWORDS = ['comprar', 'pedido', 'orden', 'agendar', 'apartalo', 'lo
 const POSITIVE_CONFIRMATIONS = ['si', 'sí', 'claro', 'confirmo', 'ok', 'va', 'dale', 'perfecto', 'queda'];
 const NEGATIVE_KEYWORDS = ['cambiar', 'cancel', 'cancelar', 'modificar'];
 
-const operationsPhoneNormalized = normalizePhone(env.operationsPhoneNumber);
+const operationsPhoneNormalized = normalizePhone(env.operationsPhoneNumber ?? '');
 
 const getWelcomeMessage = (): string => {
   try {
@@ -171,13 +174,20 @@ export const handleIncomingMessage = async ({
 
     updateSessionInsights(session, cleanText);
 
-    const coverageNoticeSent = await maybeHandleCoverageNotice(session, normalizedWaId);
-    if (coverageNoticeSent) {
+    if (isStoreVisitQuestion(cleanText)) {
+      await sendStoreVisitDetails(session, normalizedWaId);
       return;
     }
 
-    if (isStoreVisitQuestion(cleanText)) {
-      await sendStoreVisitDetails(session, normalizedWaId);
+    if (shouldOfferDiscount(cleanText)) {
+      const handled = await handleDiscountRequest(session, normalizedWaId);
+      if (handled) {
+        return;
+      }
+    }
+
+    const coverageNoticeSent = await maybeHandleCoverageNotice(session, normalizedWaId);
+    if (coverageNoticeSent) {
       return;
     }
 
@@ -518,10 +528,10 @@ const isLikelyTimeExpression = (value: string): boolean => {
 };
 
 const extractCityFromMessage = (message: string): string | undefined => {
-  const match = message.match(/(?:de|desde|en)\s+([a-záéíóúüñ\s]+)/i);
+  const match = message.match(/(?:\bde\b|\bdesde\b|\ben\b)\s+([a-záéíóúüñ\s]+)/i);
   if (match?.[1]) {
     const candidate = capitalizeWords(match[1].trim());
-    if (!isLikelyTimeExpression(candidate)) {
+    if (!isLikelyTimeExpression(candidate) && !containsDiscountKeyword(candidate)) {
       return candidate;
     }
   }
@@ -530,10 +540,10 @@ const extractCityFromMessage = (message: string): string | undefined => {
 
 const updateSessionInsights = (session: LeadSession, message: string): void => {
   const lower = message.toLowerCase();
-  const cityMatch = message.match(/(?:soy de|estoy en|en la ciudad de|ciudad\s*)([a-záéíóúüñ\s]+)/i);
+  const cityMatch = message.match(/(?:soy\s+de|estoy\s+en|en\s+la\s+ciudad\s+de|ciudad\s+)([a-záéíóúüñ\s]+)/i);
   if (cityMatch && !session.city) {
     const candidate = capitalizeWords(cityMatch[1].trim());
-    if (!isLikelyTimeExpression(candidate)) {
+    if (!isLikelyTimeExpression(candidate) && !containsDiscountKeyword(candidate)) {
       session.city = candidate;
       session.cityAllowed = isCitySupported(session.city);
       session.cityNoticeSent = false;
@@ -635,16 +645,91 @@ const determineMissingFields = (order?: OrderDraft): OrderField[] => {
   return fields;
 };
 
+const formatAmount = (value: number): string => (Number.isInteger(value) ? value.toString() : value.toFixed(2));
+
+const ensureOrderDraft = (session: LeadSession): OrderDraft => {
+  if (!session.order) {
+    const product = getProductInfo();
+    session.order = {
+      productName: product.name,
+      price: product.price,
+      currency: product.currency,
+      status: 'collecting',
+    };
+  }
+  return session.order;
+};
+
+const calculateOrderTotals = (order: OrderDraft): { baseTotal: number; discountTotal: number; finalTotal: number } => {
+  const quantity = order.quantity && order.quantity > 0 ? order.quantity : 1;
+  const baseTotal = quantity * order.price;
+  const discountPerUnit = Math.min(order.discountPerUnit ?? 0, order.price);
+  const eligibleUnits = Math.min(order.discountEligibleUnits ?? quantity, quantity, MAX_DISCOUNT_UNITS);
+  const discountTotal = Math.min(baseTotal, discountPerUnit * eligibleUnits);
+  const finalTotal = Math.max(0, baseTotal - discountTotal);
+  return { baseTotal, discountTotal, finalTotal };
+};
+
+const shouldOfferDiscount = (message: string): boolean => {
+  const normalized = message.toLowerCase();
+  return DISCOUNT_KEYWORDS.some((keyword) => normalized.includes(keyword));
+};
+
+const handleDiscountRequest = async (session: LeadSession, normalizedWaId: string): Promise<boolean> => {
+  const order = ensureOrderDraft(session);
+  const quantity = order.quantity && order.quantity > 0 ? order.quantity : 1;
+  const discountPerUnit = Math.min(MAX_DISCOUNT_PER_UNIT, order.price);
+  const eligibleUnits = Math.min(quantity, MAX_DISCOUNT_UNITS);
+  const totalDiscount = discountPerUnit * eligibleUnits;
+  if (totalDiscount <= 0) {
+    return false;
+  }
+
+  const previousDiscount = order.discountTotal ?? 0;
+  order.discountPerUnit = discountPerUnit;
+  order.discountEligibleUnits = eligibleUnits;
+  order.discountTotal = totalDiscount;
+
+  const { finalTotal } = calculateOrderTotals(order);
+  const capText =
+    quantity > MAX_DISCOUNT_UNITS
+      ? `Aplica a las primeras ${MAX_DISCOUNT_UNITS} unidades (máx Bs.${formatAmount(
+          MAX_DISCOUNT_UNITS * discountPerUnit,
+        )}). `
+      : '';
+
+  const intro = previousDiscount
+    ? 'Ya tienes un precio especial activo. '
+    : `Puedo bajarte Bs.${formatAmount(discountPerUnit)} por unidad (hasta Bs.${formatAmount(totalDiscount)}). `;
+  const reply = `${intro}${capText}Tu total queda en ${order.currency} ${formatAmount(finalTotal)}. ¿Aprovechamos esta oferta? 💥`;
+
+  await sendTextMessage(session.waId, reply);
+  recordBotMessage(session, reply);
+  await logConversationMessage({
+    conversationId: normalizedWaId,
+    channel: 'whatsapp',
+    direction: 'outgoing',
+    message: reply,
+    phone: session.waId,
+    name: 'Asesor Fénix',
+    metadata: { stage: session.stage, discount: true },
+  });
+  return true;
+};
+
 const sendOrderSummary = async (session: LeadSession, laPazNow: DateTime): Promise<void> => {
   if (!session.order) {
     return;
   }
 
   const quantity = session.order.quantity ?? 1;
-  const total = quantity * session.order.price;
+  const { finalTotal, discountTotal } = calculateOrderTotals(session.order);
   const slot = calculateDeliverySlot(laPazNow);
   session.order.confirmedSlot = slot.label;
-  const summary = `Perfecto ${session.name ?? ''}! 🙌 Tengo tu pedido: ${quantity} x ${session.order.productName} (${session.order.currency} ${session.order.price} c/u, total ${session.order.currency} ${total}). Podemos entregar ${slot.label}. Dirección registrada: ${session.order.address ?? 'por confirmar'}. ¿Confirmamos para agendarlo? 🗓️`;
+  const totalText = discountTotal
+    ? `${session.order.currency} ${formatAmount(finalTotal)} (incluye ${session.order.currency} ${formatAmount(discountTotal)} de descuento especial)`
+    : `${session.order.currency} ${formatAmount(finalTotal)}`;
+  const summary = `Perfecto ${session.name ?? ''}! 🙌 Tengo tu pedido: ${quantity} x ${session.order.productName} (${session.order.currency} ${session.order.price} c/u, total ${totalText}). Podemos entregar ${slot.label}. Dirección registrada: ${session.order.address ?? 'por confirmar'}. ¿Confirmamos para agendarlo? 🗓️`;
 
   session.stage = 'awaiting_confirmation';
   await sendTextMessage(session.waId, summary);
@@ -688,19 +773,21 @@ const confirmOrderWithOperations = async (session: LeadSession): Promise<void> =
 
 const buildOperationsMessage = (session: LeadSession): string => {
   const order = session.order!;
-  return [
+  const lines = [
     '🟠 Nuevo pedido Asesor Fénix',
     `Cliente: ${session.name ?? 'Sin nombre'} (${session.waId})`,
     `Ciudad: ${session.city ?? 'N/D'}`,
     `Producto: ${order.quantity ?? '1'} x ${order.productName}`,
     `Precio unitario: ${order.currency} ${order.price}`,
+    order.discountTotal ? `Descuento aplicado: ${order.currency} ${formatAmount(order.discountTotal)}` : undefined,
     `Ventana estimada: ${order.confirmedSlot ?? order.requestedTime ?? 'Por confirmar'}`,
     `Dirección: ${order.address ?? 'Pendiente'}`,
     '',
     `Responder con:`,
     `AGENDA_OK|${session.waId}|<hora confirmada>`,
     `PEDIDO_ENTREGADO|${session.waId}|<nota opcional>`,
-  ].join('\n');
+  ].filter(Boolean) as string[];
+  return lines.join('\n');
 };
 
 const buildContextNotes = (session: LeadSession): string[] => {
@@ -718,6 +805,11 @@ const buildContextNotes = (session: LeadSession): string[] => {
     }
     if (order.address) {
       notes.push(`Dirección confirmada: ${order.address}`);
+    }
+    if (order.discountTotal) {
+      notes.push(
+        `Descuento otorgado: ${order.currency} ${formatAmount(order.discountTotal)} (${order.discountPerUnit ?? 0} c/u, máx ${MAX_DISCOUNT_PER_UNIT} por unidad).`,
+      );
     }
   }
   notes.push(`Media compartida: ${session.mediaShared ? 'sí' : 'no'}`);
@@ -803,6 +895,11 @@ const maybeHandleCoverageNotice = async (session: LeadSession, normalizedWaId: s
 const isStoreVisitQuestion = (message: string): boolean => {
   const normalized = message.toLowerCase();
   return STORE_VISIT_KEYWORDS.some((keyword) => normalized.includes(keyword));
+};
+
+const containsDiscountKeyword = (value: string): boolean => {
+  const normalized = value.toLowerCase();
+  return DISCOUNT_KEYWORDS.some((keyword) => normalized.includes(keyword));
 };
 
 const sendStoreVisitDetails = async (session: LeadSession, normalizedWaId: string): Promise<void> => {
@@ -1023,6 +1120,10 @@ const isLikelyPersonalName = (value: string): boolean => {
 
 
 const notifyOperationsChannel = async (message: string, metadata?: Record<string, unknown>): Promise<void> => {
+  if (!env.operationsPhoneNumber) {
+    console.warn('operationsPhoneNumber no configurado; no se enviará notificación.');
+    return;
+  }
   await sendTextMessage(env.operationsPhoneNumber, message);
   await logConversationMessage({
     conversationId: operationsPhoneNormalized,

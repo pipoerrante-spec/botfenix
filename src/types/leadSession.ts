@@ -20,6 +20,9 @@ export interface OrderDraft {
   confirmedSlot?: string;
   address?: string;
   status: 'collecting' | 'pending_ops' | 'scheduled' | 'delivered';
+  discountPerUnit?: number;
+  discountEligibleUnits?: number;
+  discountTotal?: number;
 }
 
 export interface LeadSession {

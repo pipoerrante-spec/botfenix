@@ -38,11 +38,11 @@ const resolveMediaPrefix = () => {
 };
 exports.env = {
     port: normalizePort(process.env.PORT),
-    metaVerifyToken: required('META_VERIFY_TOKEN'),
-    metaAccessToken: required('META_ACCESS_TOKEN'),
-    phoneNumberId: required('PHONE_NUMBER_ID'),
-    openAiApiKey: required('OPENAI_API_KEY'),
-    operationsPhoneNumber: required('OPERATIONS_PHONE_NUMBER'),
+    metaVerifyToken: process.env.META_VERIFY_TOKEN,
+    metaAccessToken: process.env.META_ACCESS_TOKEN,
+    phoneNumberId: process.env.PHONE_NUMBER_ID,
+    openAiApiKey: process.env.OPENAI_API_KEY,
+    operationsPhoneNumber: process.env.OPERATIONS_PHONE_NUMBER,
     supabase: resolveSupabaseConfig(),
     supabaseMediaBucket: resolveMediaBucket(),
     supabaseMediaPrefix: resolveMediaPrefix(),
