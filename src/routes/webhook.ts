@@ -83,6 +83,21 @@ export const handleIncomingMessage = async ({
     session.nameConfirmed = isLikelyPersonalName(session.name);
   }
 
+  let cityUpdatedFromMessage = false;
+  const cityFromText = extractCityFromMessage(cleanText);
+  if (cityFromText) {
+    if (!session.city || session.city.toLowerCase() !== cityFromText.toLowerCase()) {
+      session.city = cityFromText;
+      session.cityAllowed = isCitySupported(cityFromText);
+      session.cityNoticeSent = false;
+      cityUpdatedFromMessage = true;
+    }
+  }
+
+  if (!session.nameConfirmed && cityUpdatedFromMessage && session.city && session.cityNoticeSent !== true) {
+    await maybeHandleCoverageNotice(session, normalizedWaId);
+  }
+
   try {
     if (session.stage === 'nuevo') {
       if (session.nameConfirmed) {
@@ -161,15 +176,6 @@ export const handleIncomingMessage = async ({
         metadata: { stage: session.stage },
       });
       return;
-    }
-
-    if (!session.city) {
-      const city = extractCityFromMessage(cleanText);
-      if (city) {
-        session.city = city;
-        session.cityAllowed = isCitySupported(city);
-        session.cityNoticeSent = false;
-      }
     }
 
     updateSessionInsights(session, cleanText);
