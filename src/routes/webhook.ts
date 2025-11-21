@@ -164,6 +164,7 @@ export const handleIncomingMessage = async ({
       if (city) {
         session.city = city;
         session.cityAllowed = isCitySupported(city);
+        session.cityNoticeSent = false;
       }
     }
 
@@ -526,6 +527,7 @@ const updateSessionInsights = (session: LeadSession, message: string): void => {
     if (!isLikelyTimeExpression(candidate)) {
       session.city = candidate;
       session.cityAllowed = isCitySupported(session.city);
+      session.cityNoticeSent = false;
     }
   }
 

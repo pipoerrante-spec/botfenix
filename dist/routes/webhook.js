@@ -141,6 +141,7 @@ const handleIncomingMessage = async ({ waId, normalizedWaId, profileName, text, 
             if (city) {
                 session.city = city;
                 session.cityAllowed = isCitySupported(city);
+                session.cityNoticeSent = false;
             }
         }
         updateSessionInsights(session, cleanText);
@@ -458,6 +459,7 @@ const updateSessionInsights = (session, message) => {
         if (!isLikelyTimeExpression(candidate)) {
             session.city = candidate;
             session.cityAllowed = isCitySupported(session.city);
+            session.cityNoticeSent = false;
         }
     }
     const interestKeywords = ['tenis', 'zapatos', 'running', 'bolsa', 'gym', 'atleta'];
