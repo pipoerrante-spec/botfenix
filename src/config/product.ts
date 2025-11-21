@@ -1,18 +1,7 @@
 import fs from 'fs';
 import path from 'path';
-
-export interface ProductInfo {
-  name: string;
-  sku: string;
-  price: number;
-  currency: string;
-  shortDescription: string;
-  highlights: string[];
-  materials: string[];
-  packageIncludes: string;
-  deliveryPromise: string;
-  pitch: string;
-}
+import { ProductInfo } from '../types/product';
+import { getActiveCatalogProduct } from '../services/productCatalogService';
 
 const productFilePath = path.join(process.cwd(), 'data', 'product.json');
 
@@ -26,6 +15,11 @@ const parseProductFile = (): ProductInfo => {
 };
 
 export const getProductInfo = (): ProductInfo => {
+  const active = getActiveCatalogProduct();
+  if (active) {
+    const { media, ...info } = active;
+    return info;
+  }
   return parseProductFile();
 };
 

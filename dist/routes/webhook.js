@@ -90,7 +90,7 @@ const handleIncomingMessage = async ({ waId, normalizedWaId, profileName, text, 
                     await sendProductIntro(session, normalizedWaId, { personalize: true });
                     return;
                 }
-                const clarify = 'Gracias. ¿Me compartes el nombre de la persona que coordina (no el de la empresa)?';
+                const clarify = 'Gracias 🤝. ¿Me compartes el nombre de la persona que coordina (no el de la empresa)?';
                 await (0, whatsappService_1.sendTextMessage)(session.waId, clarify);
                 recordBotMessage(session, clarify);
                 await (0, conversationLogService_1.logConversationMessage)({
@@ -160,7 +160,7 @@ const handleIncomingMessage = async ({ waId, normalizedWaId, profileName, text, 
                 normalizedWaId,
                 isResend: resendRequested,
                 followUpMessage: !session.city
-                    ? 'Para coordinar la entrega necesito saber en qué ciudad estás (puede ser con un enlace de Maps, sin ubicación en vivo).'
+                    ? 'Para coordinar la entrega necesito saber en qué ciudad estás 📍 (puede ser con un enlace de Maps, sin ubicación en vivo).'
                     : undefined,
             });
         }
@@ -515,7 +515,7 @@ const sendOrderSummary = async (session, laPazNow) => {
     const total = quantity * session.order.price;
     const slot = calculateDeliverySlot(laPazNow);
     session.order.confirmedSlot = slot.label;
-    const summary = `Perfecto ${session.name ?? ''}! Tengo tu pedido: ${quantity} x ${session.order.productName} (${session.order.currency} ${session.order.price} c/u, total ${session.order.currency} ${total}). Podemos entregar ${slot.label}. Dirección registrada: ${session.order.address ?? 'por confirmar'}. ¿Confirmamos para agendarlo?`;
+    const summary = `Perfecto ${session.name ?? ''}! 🙌 Tengo tu pedido: ${quantity} x ${session.order.productName} (${session.order.currency} ${session.order.price} c/u, total ${session.order.currency} ${total}). Podemos entregar ${slot.label}. Dirección registrada: ${session.order.address ?? 'por confirmar'}. ¿Confirmamos para agendarlo? 🗓️`;
     session.stage = 'awaiting_confirmation';
     await (0, whatsappService_1.sendTextMessage)(session.waId, summary);
     recordBotMessage(session, summary);
@@ -536,7 +536,7 @@ const confirmOrderWithOperations = async (session) => {
     session.order.status = 'pending_ops';
     session.stage = 'pending_ops';
     const slotLabel = session.order.confirmedSlot ?? calculateDeliverySlot().label;
-    const ackMessage = `Gracias ${session.name ?? ''}. Estoy avisando al equipo para agendar tu pedido ${slotLabel}. En cuanto me confirmen la hora exacta, te escribo.`;
+    const ackMessage = `Gracias ${session.name ?? ''} 🙏. Estoy avisando al equipo para agendar tu pedido ${slotLabel}. En cuanto me confirmen la hora exacta, te escribo ✅.`;
     await (0, whatsappService_1.sendTextMessage)(session.waId, ackMessage);
     recordBotMessage(session, ackMessage);
     await (0, conversationLogService_1.logConversationMessage)({
@@ -600,8 +600,8 @@ const sendProductIntro = async (session, normalizedWaId, options) => {
     const normalizedHighlight = highlightBase
         ? highlightBase.charAt(0).toLowerCase() + highlightBase.slice(1)
         : 'son ideales para personalizar tu vehículo';
-    const baseLine = `Tengo los ${product.name} en ${product.currency} ${product.price}: ${normalizedHighlight}.`;
-    const question = '¿Te mando fotos y video o prefieres hablar de instalación y tiempos?';
+    const baseLine = `Tengo los ${product.name} en ${product.currency} ${product.price} ✨: ${normalizedHighlight}.`;
+    const question = '¿Te mando fotos y video o prefieres hablar de instalación y tiempos? 🙂';
     const introMessage = [greeting, nameHook, baseLine, question].filter(Boolean).join(' ');
     await (0, whatsappService_1.sendTextMessage)(session.waId, introMessage);
     recordBotMessage(session, introMessage);
@@ -621,7 +621,7 @@ const sendProductIntro = async (session, normalizedWaId, options) => {
             normalizedWaId,
             introMessage: 'Te dejo fotos y un video para que veas cómo lucen en el parabrisas 👇',
             followUpMessage: !session.city
-                ? 'Para coordinar la entrega, ¿en qué ciudad estás? Si puedes, envíame un enlace de Maps (sin compartir ubicación en vivo) para tener la dirección exacta.'
+                ? 'Para coordinar la entrega, ¿en qué ciudad estás? 📍 Si puedes, envíame un enlace de Maps (sin compartir ubicación en vivo) para tener la dirección exacta.'
                 : undefined,
         });
     }
@@ -631,7 +631,7 @@ const maybeHandleCoverageNotice = async (session, normalizedWaId) => {
         const coverageList = formatCoverageList();
         const city = session.city;
         const nameHook = session.name ? ` ${session.name}` : '';
-        const notice = `Perfecto${nameHook}, sí hacemos entregas en ${city}. En ${coverageList} entregamos en el día; para ${city} gestionamos un envío que tarda entre 24 y 48 horas y solo necesitas cubrir el costo del envío. ¿Te parece si avanzamos con los datos para coordinarlo?`;
+        const notice = `Perfecto${nameHook}, sí hacemos entregas en ${city}. En ${coverageList} entregamos en el día; para ${city} gestionamos un envío que tarda entre 24 y 48 horas y solo necesitas cubrir el costo del envío 🚚✨. ¿Te parece si avanzamos con los datos para coordinarlo?`;
         await (0, whatsappService_1.sendTextMessage)(session.waId, notice);
         recordBotMessage(session, notice);
         await (0, conversationLogService_1.logConversationMessage)({
@@ -651,7 +651,7 @@ const maybeHandleCoverageNotice = async (session, normalizedWaId) => {
 const shareProductMedia = async ({ session, normalizedWaId, isResend, introMessage, followUpMessage, }) => {
     const assets = await (0, mediaService_1.listProductMedia)();
     if (!assets.length) {
-        const fallback = 'Aún no tengo archivos listos para compartir en este momento, pero ya pedí al equipo que los habilite y te aviso apenas estén disponibles.';
+        const fallback = 'Aún no tengo archivos listos para compartir en este momento 🙏, pero ya pedí al equipo que los habilite y te aviso apenas estén disponibles.';
         await (0, whatsappService_1.sendTextMessage)(session.waId, fallback);
         recordBotMessage(session, fallback);
         await (0, conversationLogService_1.logConversationMessage)({
@@ -668,8 +668,8 @@ const shareProductMedia = async ({ session, normalizedWaId, isResend, introMessa
     const intro = introMessage
         ? introMessage
         : isResend
-            ? 'Reenviando las fotos del producto para que las tengas a mano 👇'
-            : 'Te comparto fotos y videos del producto para que lo veas mejor 👇';
+            ? 'Reenviando las fotos del producto para que las tengas a mano 🔁📸👇'
+            : 'Te comparto fotos y videos del producto para que lo veas mejor 📸👇';
     await (0, whatsappService_1.sendTextMessage)(session.waId, intro);
     recordBotMessage(session, intro);
     await (0, conversationLogService_1.logConversationMessage)({
@@ -684,7 +684,7 @@ const shareProductMedia = async ({ session, normalizedWaId, isResend, introMessa
     let sentAny = false;
     for (const asset of assets) {
         if (asset.type === 'video' && asset.extension && asset.extension !== 'mp4') {
-            const fallbackText = `Te dejo el video para que lo veas desde este enlace: ${asset.url}`;
+            const fallbackText = `Te dejo el video para que lo veas desde este enlace 🎥👉 ${asset.url}`;
             await (0, whatsappService_1.sendTextMessage)(session.waId, fallbackText);
             recordBotMessage(session, fallbackText);
             sentAny = true;
@@ -716,7 +716,7 @@ const shareProductMedia = async ({ session, normalizedWaId, isResend, introMessa
         }
         catch (error) {
             console.error('No se pudo enviar media, enviando fallback con link', error);
-            const fallbackText = `Aquí tienes el enlace: ${asset.url}`;
+            const fallbackText = `Aquí tienes el enlace 🔗 ${asset.url}`;
             await (0, whatsappService_1.sendTextMessage)(session.waId, fallbackText);
             recordBotMessage(session, fallbackText);
             sentAny = true;
@@ -732,7 +732,7 @@ const shareProductMedia = async ({ session, normalizedWaId, isResend, introMessa
         }
     }
     if (!sentAny) {
-        const notice = 'Hubo un problema enviando archivos, te dejo los links aquí:';
+        const notice = 'Hubo un problema enviando archivos ⚠️, te dejo los links aquí:';
         await (0, whatsappService_1.sendTextMessage)(session.waId, `${notice}\n${assets.map((asset) => asset.url).join('\n')}`);
     }
     session.mediaShared = true;

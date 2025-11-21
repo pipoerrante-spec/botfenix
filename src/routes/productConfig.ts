@@ -1,5 +1,6 @@
 import { Router, Request, Response } from 'express';
-import { getProductInfo, saveProductInfo, ProductInfo } from '../config/product';
+import { getProductInfo, saveProductInfo } from '../config/product';
+import { ProductInfo } from '../types/product';
 
 const router = Router();
 

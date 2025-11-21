@@ -12,6 +12,7 @@ const fluent_ffmpeg_1 = __importDefault(require("fluent-ffmpeg"));
 const ffmpeg_1 = __importDefault(require("@ffmpeg-installer/ffmpeg"));
 const supabase_js_1 = require("@supabase/supabase-js");
 const env_1 = require("../config/env");
+const productCatalogService_1 = require("./productCatalogService");
 const CACHE_TTL_MS = 5 * 60 * 1000;
 const SIGNED_URL_TTL_SECONDS = 60 * 60 * 6;
 const MAX_RECURSION_DEPTH = 5;
@@ -102,6 +103,19 @@ const resolveFileUrl = async (client, filePath) => {
     return data?.signedUrl ?? null;
 };
 const listProductMedia = async () => {
+    const catalogMedia = (0, productCatalogService_1.getActiveProductMedia)();
+    if (catalogMedia.length) {
+        const assets = catalogMedia
+            .filter((item) => Boolean(item.url))
+            .map((item) => ({
+            type: item.type,
+            url: item.url,
+            caption: item.caption,
+            extension: item.extension,
+        }));
+        cache = { assets, expiresAt: Date.now() + CACHE_TTL_MS };
+        return assets;
+    }
     if (!env_1.env.supabase?.url || !env_1.env.supabase?.serviceRoleKey || !env_1.env.supabaseMediaBucket) {
         return loadFallbackAssets();
     }

@@ -6,6 +6,7 @@ import webhookRouter from './routes/webhook';
 import productConfigRouter from './routes/productConfig';
 import brandingConfigRouter from './routes/brandingConfig';
 import dashboardApiRouter from './routes/dashboard';
+import productCatalogRouter from './routes/productCatalog';
 import { getChatGPTReply } from './services/openaiService';
 import { logConversationMessage } from './services/conversationLogService';
 
@@ -17,6 +18,7 @@ app.use(express.static(staticDir));
 app.use('/api/product', productConfigRouter);
 app.use('/api/branding', brandingConfigRouter);
 app.use('/api/dashboard', dashboardApiRouter);
+app.use('/api/catalog', productCatalogRouter);
 
 app.get('/health', (_req: Request, res: Response) => {
   res.json({ status: 'ok' });

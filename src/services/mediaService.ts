@@ -6,6 +6,7 @@ import ffmpeg from 'fluent-ffmpeg';
 import ffmpegInstaller from '@ffmpeg-installer/ffmpeg';
 import { createClient, SupabaseClient } from '@supabase/supabase-js';
 import { env } from '../config/env';
+import { getActiveProductMedia } from './productCatalogService';
 
 export type MediaAssetType = 'image' | 'video';
 
@@ -146,6 +147,20 @@ const resolveFileUrl = async (
 };
 
 export const listProductMedia = async (): Promise<MediaAsset[]> => {
+  const catalogMedia = getActiveProductMedia();
+  if (catalogMedia.length) {
+    const assets = catalogMedia
+      .filter((item) => Boolean(item.url))
+      .map<MediaAsset>((item) => ({
+        type: item.type,
+        url: item.url,
+        caption: item.caption,
+        extension: item.extension,
+      }));
+    cache = { assets, expiresAt: Date.now() + CACHE_TTL_MS };
+    return assets;
+  }
+
   if (!env.supabase?.url || !env.supabase?.serviceRoleKey || !env.supabaseMediaBucket) {
     return loadFallbackAssets();
   }

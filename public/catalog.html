@@ -1,0 +1,667 @@
+<!DOCTYPE html>
+<html lang="es">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>Catálogo de productos · Bot</title>
+    <style>
+      :root {
+        --bg: #030712;
+        --panel: #0b1220;
+        --card: #111827;
+        --text: #f3f4f6;
+        --muted: #9ca3af;
+        --accent: #22d3ee;
+        --danger: #ef4444;
+        --border: #1f2937;
+      }
+
+      * {
+        box-sizing: border-box;
+      }
+
+      body {
+        margin: 0;
+        font-family: 'Inter', system-ui, -apple-system, BlinkMacSystemFont, sans-serif;
+        background: var(--bg);
+        color: var(--text);
+        min-height: 100vh;
+      }
+
+      header {
+        padding: 32px 40px 0;
+      }
+
+      header h1 {
+        margin: 0 0 4px;
+        font-size: 2rem;
+      }
+
+      header p {
+        margin: 0;
+        color: var(--muted);
+      }
+
+      main {
+        padding: 24px 40px 40px;
+      }
+
+      .layout {
+        display: grid;
+        grid-template-columns: 280px 1fr 360px;
+        gap: 20px;
+      }
+
+      @media (max-width: 1200px) {
+        .layout {
+          grid-template-columns: 1fr;
+        }
+      }
+
+      .panel {
+        background: var(--panel);
+        border: 1px solid var(--border);
+        border-radius: 20px;
+        padding: 20px;
+      }
+
+      .products-list {
+        list-style: none;
+        margin: 16px 0 0;
+        padding: 0;
+        max-height: calc(100vh - 200px);
+        overflow-y: auto;
+      }
+
+      .products-list li {
+        border: 1px solid var(--border);
+        border-radius: 14px;
+        padding: 12px;
+        margin-bottom: 10px;
+        cursor: pointer;
+        transition: border 0.2s ease, background 0.2s ease;
+      }
+
+      .products-list li.active {
+        border-color: var(--accent);
+      }
+
+      .products-list li.selected {
+        background: rgba(34, 211, 238, 0.12);
+      }
+
+      .products-list small {
+        display: block;
+        color: var(--muted);
+      }
+
+      form label {
+        display: flex;
+        flex-direction: column;
+        gap: 6px;
+        font-size: 0.9rem;
+        color: var(--muted);
+      }
+
+      label[data-hint] {
+        position: relative;
+      }
+
+      .label-head {
+        display: flex;
+        align-items: center;
+        justify-content: space-between;
+        gap: 8px;
+        color: var(--text);
+        font-weight: 600;
+        font-size: 0.95rem;
+      }
+
+      .hint-icon {
+        width: 18px;
+        height: 18px;
+        border-radius: 50%;
+        border: 1px solid var(--muted);
+        color: var(--muted);
+        font-size: 0.7rem;
+        display: inline-flex;
+        align-items: center;
+        justify-content: center;
+        cursor: help;
+      }
+
+      label[data-hint]::after {
+        content: attr(data-hint);
+        position: absolute;
+        right: 0;
+        top: -6px;
+        transform: translateY(-100%);
+        background: rgba(15, 23, 42, 0.95);
+        color: var(--text);
+        padding: 10px 12px;
+        border-radius: 10px;
+        border: 1px solid var(--border);
+        font-size: 0.8rem;
+        line-height: 1.2;
+        width: 240px;
+        max-width: 70vw;
+        opacity: 0;
+        pointer-events: none;
+        transition: opacity 0.2s ease;
+        box-shadow: 0 12px 30px rgba(0, 0, 0, 0.35);
+        z-index: 10;
+      }
+
+      label[data-hint]:hover::after,
+      label[data-hint]:focus-within::after {
+        opacity: 1;
+      }
+
+      form input,
+      form textarea {
+        width: 100%;
+        border-radius: 12px;
+        border: 1px solid var(--border);
+        background: var(--card);
+        color: var(--text);
+        padding: 12px;
+        font-size: 1rem;
+      }
+
+      textarea {
+        resize: vertical;
+        min-height: 80px;
+      }
+
+      .grid {
+        display: grid;
+        gap: 14px;
+      }
+
+      .grid.two-cols {
+        grid-template-columns: repeat(2, minmax(0, 1fr));
+      }
+
+      @media (max-width: 900px) {
+        .grid.two-cols {
+          grid-template-columns: 1fr;
+        }
+      }
+
+      .actions {
+        display: flex;
+        flex-wrap: wrap;
+        gap: 12px;
+        justify-content: flex-end;
+        padding-top: 12px;
+      }
+
+      button {
+        border: none;
+        border-radius: 12px;
+        padding: 12px 18px;
+        font-size: 0.95rem;
+        font-weight: 600;
+        cursor: pointer;
+      }
+
+      .primary {
+        background: var(--accent);
+        color: #032127;
+      }
+
+      .ghost {
+        background: transparent;
+        color: var(--muted);
+        border: 1px dashed var(--border);
+      }
+
+      .danger {
+        background: transparent;
+        border: 1px solid var(--danger);
+        color: var(--danger);
+      }
+
+      .media-list {
+        list-style: none;
+        margin: 16px 0 0;
+        padding: 0;
+        display: flex;
+        flex-direction: column;
+        gap: 12px;
+      }
+
+      .media-item {
+        border: 1px solid var(--border);
+        border-radius: 14px;
+        padding: 12px;
+        display: flex;
+        gap: 12px;
+        align-items: center;
+      }
+
+      .media-item img,
+      .media-item video {
+        width: 80px;
+        height: 80px;
+        object-fit: cover;
+        border-radius: 10px;
+      }
+
+      .media-item button {
+        margin-left: auto;
+        padding: 6px 10px;
+      }
+
+      .toast {
+        position: fixed;
+        bottom: 20px;
+        right: 20px;
+        background: rgba(17, 24, 39, 0.9);
+        border-radius: 10px;
+        padding: 12px 18px;
+        opacity: 0;
+        transform: translateY(10px);
+        transition: opacity 0.3s ease, transform 0.3s ease;
+      }
+
+      .toast.visible {
+        opacity: 1;
+        transform: translateY(0);
+      }
+    </style>
+  </head>
+  <body>
+    <header>
+      <h1>Mantenedor de productos</h1>
+      <p>Publica productos, media y copys para alimentar al bot.</p>
+    </header>
+    <main>
+      <div class="layout">
+        <aside class="panel">
+          <div style="display: flex; justify-content: space-between; align-items: center">
+            <h3 style="margin: 0">Productos</h3>
+            <button class="ghost" id="new-product">+ Nuevo</button>
+          </div>
+          <ul class="products-list" id="product-list"></ul>
+        </aside>
+        <section class="panel">
+          <h3 style="margin-top: 0">Detalle</h3>
+          <form id="product-form">
+            <div class="grid two-cols">
+              <label
+                data-hint="Nombre comercial que verán los clientes cuando el bot presente el producto."
+                title="Nombre comercial que verán los clientes cuando el bot presente el producto."
+              >
+                <span class="label-head">Nombre <span class="hint-icon" aria-hidden="true">?</span></span>
+                <input type="text" name="name" required />
+              </label>
+              <label
+                data-hint="Código interno o SKU que te ayuda a diferenciar variantes e inventario."
+                title="Código interno o SKU que te ayuda a diferenciar variantes e inventario."
+              >
+                <span class="label-head">SKU <span class="hint-icon" aria-hidden="true">?</span></span>
+                <input type="text" name="sku" required />
+              </label>
+            </div>
+            <div class="grid two-cols">
+              <label
+                data-hint="Precio unitario que comunicará el bot. Usa solo números y centavos."
+                title="Precio unitario que comunicará el bot. Usa solo números y centavos."
+              >
+                <span class="label-head">Precio <span class="hint-icon" aria-hidden="true">?</span></span>
+                <input type="number" name="price" min="0" step="0.01" required />
+              </label>
+              <label
+                data-hint="Código de moneda (ej. BOB, USD, MXN) en mayúsculas."
+                title="Código de moneda (ej. BOB, USD, MXN) en mayúsculas."
+              >
+                <span class="label-head">Moneda <span class="hint-icon" aria-hidden="true">?</span></span>
+                <input type="text" name="currency" maxlength="6" required />
+              </label>
+            </div>
+            <label
+              data-hint="Resumen de una o dos frases que introduce el producto antes de los detalles."
+              title="Resumen de una o dos frases que introduce el producto antes de los detalles."
+            >
+              <span class="label-head">Descripción corta <span class="hint-icon" aria-hidden="true">?</span></span>
+              <textarea name="shortDescription" rows="2" required></textarea>
+            </label>
+            <label
+              data-hint="Beneficios o puntos fuertes. Escribe un bullet por línea."
+              title="Beneficios o puntos fuertes. Escribe un bullet por línea."
+            >
+              <span class="label-head">Highlights (uno por línea) <span class="hint-icon" aria-hidden="true">?</span></span>
+              <textarea name="highlights" rows="4" required></textarea>
+            </label>
+            <label
+              data-hint="Materiales o componentes principales que quieras destacar."
+              title="Materiales o componentes principales que quieras destacar."
+            >
+              <span class="label-head">Materiales <span class="hint-icon" aria-hidden="true">?</span></span>
+              <textarea name="materials" rows="3" required></textarea>
+            </label>
+            <div class="grid two-cols">
+              <label
+                data-hint="Lista lo que incluye el kit o la caja para que el cliente sepa qué recibe."
+                title="Lista lo que incluye el kit o la caja para que el cliente sepa qué recibe."
+              >
+                <span class="label-head">Contenido del paquete <span class="hint-icon" aria-hidden="true">?</span></span>
+                <textarea name="packageIncludes" rows="2" required></textarea>
+              </label>
+              <label
+                data-hint="Promesa de envío o instalación (ej. entrega express, 24-48h, etc.)."
+                title="Promesa de envío o instalación (ej. entrega express, 24-48h, etc.)."
+              >
+                <span class="label-head">Promesa de entrega <span class="hint-icon" aria-hidden="true">?</span></span>
+                <textarea name="deliveryPromise" rows="2" required></textarea>
+              </label>
+            </div>
+            <label
+              data-hint="Pitch comercial o gancho que el bot usará para persuadir al cliente."
+              title="Pitch comercial o gancho que el bot usará para persuadir al cliente."
+            >
+              <span class="label-head">Pitch comercial <span class="hint-icon" aria-hidden="true">?</span></span>
+              <textarea name="pitch" rows="3" required></textarea>
+            </label>
+            <div class="actions">
+              <button type="button" class="danger" id="delete-product">Eliminar</button>
+              <button type="button" class="ghost" id="activate-product">Publicar en el bot</button>
+              <button type="submit" class="primary">Guardar</button>
+            </div>
+          </form>
+        </section>
+        <section class="panel">
+          <h3 style="margin-top: 0">Media</h3>
+          <div class="grid">
+            <label
+              data-hint="Imágenes o videos que se enviarán por WhatsApp. Para video usa MP4 si es posible."
+              title="Imágenes o videos que se enviarán por WhatsApp. Para video usa MP4 si es posible."
+            >
+              <span class="label-head">Archivo <span class="hint-icon" aria-hidden="true">?</span></span>
+              <input type="file" id="media-file" accept="image/*,video/*" />
+            </label>
+            <label
+              data-hint="Texto breve que acompaña al archivo y aparece debajo en el chat."
+              title="Texto breve que acompaña al archivo y aparece debajo en el chat."
+            >
+              <span class="label-head">Caption (opcional) <span class="hint-icon" aria-hidden="true">?</span></span>
+              <input type="text" id="media-caption" placeholder="Ej. Vista frontal" />
+            </label>
+            <button class="primary" id="upload-media" type="button">Subir archivo</button>
+          </div>
+          <ul class="media-list" id="media-list"></ul>
+        </section>
+      </div>
+    </main>
+    <div class="toast" id="toast">Guardado</div>
+    <script>
+      const state = {
+        products: [],
+        activeProductId: null,
+        currentProductId: null,
+      };
+
+      const productListEl = document.getElementById('product-list');
+      const productForm = document.getElementById('product-form');
+      const mediaListEl = document.getElementById('media-list');
+      const newProductBtn = document.getElementById('new-product');
+      const deleteProductBtn = document.getElementById('delete-product');
+      const activateProductBtn = document.getElementById('activate-product');
+      const uploadMediaBtn = document.getElementById('upload-media');
+      const mediaFileInput = document.getElementById('media-file');
+      const mediaCaptionInput = document.getElementById('media-caption');
+      const toast = document.getElementById('toast');
+
+      const showToast = (message) => {
+        toast.textContent = message;
+        toast.classList.add('visible');
+        setTimeout(() => toast.classList.remove('visible'), 2500);
+      };
+
+      const serializeForm = () => {
+        const data = Object.fromEntries(new FormData(productForm).entries());
+        const toLines = (value) =>
+          String(value ?? '')
+            .split(/\r?\n/)
+            .map((line) => line.trim())
+            .filter(Boolean);
+        return {
+          name: String(data.name ?? '').trim(),
+          sku: String(data.sku ?? '').trim(),
+          price: Number(data.price ?? 0),
+          currency: String(data.currency ?? '').trim().toUpperCase(),
+          shortDescription: String(data.shortDescription ?? '').trim(),
+          highlights: toLines(data.highlights),
+          materials: toLines(data.materials),
+          packageIncludes: String(data.packageIncludes ?? '').trim(),
+          deliveryPromise: String(data.deliveryPromise ?? '').trim(),
+          pitch: String(data.pitch ?? '').trim(),
+        };
+      };
+
+      const fillForm = (product) => {
+        const setField = (name, value) => {
+          const field = productForm.querySelector(`[name="${name}"]`);
+          if (field) field.value = value ?? '';
+        };
+        setField('name', product?.name ?? '');
+        setField('sku', product?.sku ?? '');
+        setField('price', product?.price ?? '');
+        setField('currency', product?.currency ?? 'BOB');
+        setField('shortDescription', product?.shortDescription ?? '');
+        setField('highlights', (product?.highlights ?? []).join('\n'));
+        setField('materials', (product?.materials ?? []).join('\n'));
+        setField('packageIncludes', product?.packageIncludes ?? '');
+        setField('deliveryPromise', product?.deliveryPromise ?? '');
+        setField('pitch', product?.pitch ?? '');
+      };
+
+      const renderProductList = () => {
+        productListEl.innerHTML = '';
+        if (!state.products.length) {
+          productListEl.innerHTML = '<li>No hay productos todavía</li>';
+          return;
+        }
+        state.products.forEach((product) => {
+          const li = document.createElement('li');
+          li.dataset.id = product.id;
+          li.classList.toggle('active', state.activeProductId === product.id);
+          li.classList.toggle('selected', state.currentProductId === product.id);
+          li.innerHTML = `<strong>${product.name}</strong><small>${product.currency} ${product.price} · ${product.sku}</small>`;
+          li.addEventListener('click', () => selectProduct(product.id));
+          productListEl.appendChild(li);
+        });
+      };
+
+      const renderMedia = (product) => {
+        mediaListEl.innerHTML = '';
+        if (!product?.media?.length) {
+          mediaListEl.innerHTML = '<li style="color: var(--muted)">Aún no agregas archivos</li>';
+          return;
+        }
+        product.media
+          .slice()
+          .sort((a, b) => a.sortOrder - b.sortOrder)
+          .forEach((item) => {
+            const li = document.createElement('li');
+            li.className = 'media-item';
+            if (item.type === 'video') {
+              const video = document.createElement('video');
+              video.src = item.url;
+              video.controls = true;
+              li.appendChild(video);
+            } else {
+              const img = document.createElement('img');
+              img.src = item.url;
+              img.alt = item.caption ?? 'media';
+              li.appendChild(img);
+            }
+            const details = document.createElement('div');
+            details.innerHTML = `<strong>${item.caption ?? 'Sin caption'}</strong><small>${item.type.toUpperCase()}</small>`;
+            li.appendChild(details);
+            const btn = document.createElement('button');
+            btn.textContent = 'Eliminar';
+            btn.className = 'danger';
+            btn.addEventListener('click', () => deleteMedia(item.id));
+            li.appendChild(btn);
+            mediaListEl.appendChild(li);
+          });
+      };
+
+      const selectProduct = (id) => {
+        state.currentProductId = id;
+        const product = state.products.find((item) => item.id === id);
+        fillForm(product);
+        renderProductList();
+        renderMedia(product);
+      };
+
+      const loadCatalog = async () => {
+        try {
+          const response = await fetch('/api/catalog/products');
+          if (!response.ok) throw new Error('No pude cargar el catálogo');
+          const catalog = await response.json();
+          state.products = catalog.products ?? [];
+          state.activeProductId = catalog.activeProductId ?? null;
+          if (!state.currentProductId && state.products.length) {
+            const target = state.products.find((p) => p.id === state.activeProductId) ?? state.products[0];
+            state.currentProductId = target.id;
+          }
+          if (state.currentProductId) {
+            const product = state.products.find((item) => item.id === state.currentProductId);
+            fillForm(product);
+            renderMedia(product);
+          } else {
+            fillForm(null);
+            mediaListEl.innerHTML = '';
+          }
+          renderProductList();
+        } catch (error) {
+          showToast(error.message);
+        }
+      };
+
+      productForm.addEventListener('submit', async (event) => {
+        event.preventDefault();
+        const payload = serializeForm();
+        const path = state.currentProductId
+          ? `/api/catalog/products/${state.currentProductId}`
+          : '/api/catalog/products';
+        const method = state.currentProductId ? 'PUT' : 'POST';
+        try {
+          const response = await fetch(path, {
+            method,
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify(payload),
+          });
+          if (!response.ok) {
+            const error = await response.json().catch(() => ({}));
+            throw new Error(error.error || 'Error al guardar');
+          }
+          showToast('Producto guardado');
+          await loadCatalog();
+        } catch (error) {
+          showToast(error.message);
+        }
+      });
+
+      newProductBtn.addEventListener('click', () => {
+        state.currentProductId = null;
+        fillForm(null);
+        renderProductList();
+        mediaListEl.innerHTML = '';
+      });
+
+      deleteProductBtn.addEventListener('click', async () => {
+        if (!state.currentProductId) {
+          showToast('Selecciona un producto');
+          return;
+        }
+        if (!confirm('¿Eliminar este producto?')) return;
+        try {
+          const response = await fetch(`/api/catalog/products/${state.currentProductId}`, { method: 'DELETE' });
+          if (!response.ok) {
+            const error = await response.json().catch(() => ({}));
+            throw new Error(error.error || 'No se pudo eliminar');
+          }
+          showToast('Producto eliminado');
+          state.currentProductId = null;
+          await loadCatalog();
+        } catch (error) {
+          showToast(error.message);
+        }
+      });
+
+      activateProductBtn.addEventListener('click', async () => {
+        if (!state.currentProductId) {
+          showToast('Selecciona un producto');
+          return;
+        }
+        try {
+          const response = await fetch(`/api/catalog/products/${state.currentProductId}/activate`, { method: 'POST' });
+          if (!response.ok) {
+            const error = await response.json().catch(() => ({}));
+            throw new Error(error.error || 'No se pudo activar');
+          }
+          showToast('Producto publicado en el bot');
+          await loadCatalog();
+        } catch (error) {
+          showToast(error.message);
+        }
+      });
+
+      uploadMediaBtn.addEventListener('click', async () => {
+        if (!state.currentProductId) {
+          showToast('Selecciona un producto');
+          return;
+        }
+        const file = mediaFileInput.files?.[0];
+        if (!file) {
+          showToast('Selecciona un archivo');
+          return;
+        }
+        const formData = new FormData();
+        formData.append('file', file);
+        formData.append('caption', mediaCaptionInput.value || '');
+        try {
+          const response = await fetch(`/api/catalog/products/${state.currentProductId}/media/upload`, {
+            method: 'POST',
+            body: formData,
+          });
+          if (!response.ok) {
+            const error = await response.json().catch(() => ({}));
+            throw new Error(error.error || 'No se pudo subir');
+          }
+          mediaFileInput.value = '';
+          mediaCaptionInput.value = '';
+          showToast('Archivo agregado');
+          await loadCatalog();
+        } catch (error) {
+          showToast(error.message);
+        }
+      });
+
+      const deleteMedia = async (mediaId) => {
+        if (!state.currentProductId) return;
+        if (!confirm('¿Eliminar este archivo?')) return;
+        try {
+          const response = await fetch(
+            `/api/catalog/products/${state.currentProductId}/media/${mediaId}`,
+            { method: 'DELETE' },
+          );
+          if (!response.ok) {
+            const error = await response.json().catch(() => ({}));
+            throw new Error(error.error || 'No se pudo eliminar');
+          }
+          showToast('Archivo eliminado');
+          await loadCatalog();
+        } catch (error) {
+          showToast(error.message);
+        }
+      };
+
+      loadCatalog();
+    </script>
+  </body>
+</html>

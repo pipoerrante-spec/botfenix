@@ -11,6 +11,7 @@ const webhook_1 = __importDefault(require("./routes/webhook"));
 const productConfig_1 = __importDefault(require("./routes/productConfig"));
 const brandingConfig_1 = __importDefault(require("./routes/brandingConfig"));
 const dashboard_1 = __importDefault(require("./routes/dashboard"));
+const productCatalog_1 = __importDefault(require("./routes/productCatalog"));
 const openaiService_1 = require("./services/openaiService");
 const conversationLogService_1 = require("./services/conversationLogService");
 const app = (0, express_1.default)();
@@ -20,6 +21,7 @@ app.use(express_1.default.static(staticDir));
 app.use('/api/product', productConfig_1.default);
 app.use('/api/branding', brandingConfig_1.default);
 app.use('/api/dashboard', dashboard_1.default);
+app.use('/api/catalog', productCatalog_1.default);
 app.get('/health', (_req, res) => {
     res.json({ status: 'ok' });
 });

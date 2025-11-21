@@ -6,6 +6,7 @@ Object.defineProperty(exports, "__esModule", { value: true });
 exports.formatProductBulletPoints = exports.saveProductInfo = exports.getProductInfo = void 0;
 const fs_1 = __importDefault(require("fs"));
 const path_1 = __importDefault(require("path"));
+const productCatalogService_1 = require("../services/productCatalogService");
 const productFilePath = path_1.default.join(process.cwd(), 'data', 'product.json');
 const parseProductFile = () => {
     try {
@@ -17,6 +18,11 @@ const parseProductFile = () => {
     }
 };
 const getProductInfo = () => {
+    const active = (0, productCatalogService_1.getActiveCatalogProduct)();
+    if (active) {
+        const { media, ...info } = active;
+        return info;
+    }
     return parseProductFile();
 };
 exports.getProductInfo = getProductInfo;

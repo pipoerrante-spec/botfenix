@@ -16,12 +16,14 @@
     "express": "^5.1.0",
     "fluent-ffmpeg": "^2.1.2",
     "luxon": "^3.7.2",
+    "multer": "^2.0.2",
     "node-fetch": "^3.3.2",
     "openai": "^4.77.4"
   },
   "devDependencies": {
     "@types/express": "^5.0.5",
     "@types/fluent-ffmpeg": "^2.1.28",
+    "@types/multer": "^2.0.0",
     "@types/luxon": "^3.7.1",
     "@types/node": "^20.19.25",
     "@vercel/node": "^5.5.8",
