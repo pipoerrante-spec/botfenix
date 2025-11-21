@@ -233,7 +233,7 @@
         const cards = [{ label: 'Total mensajes', value: stats.total ?? 0 }];
         const channelEntries = stats.byChannel ? Object.entries(stats.byChannel) : [];
         channelEntries.forEach(([channel, count]) => {
-          cards.push({ label: `Canal ${channel}`, value: count as number });
+          cards.push({ label: `Canal ${channel}`, value: Number(count) });
         });
         cards.forEach((card) => {
           const div = document.createElement('div');
