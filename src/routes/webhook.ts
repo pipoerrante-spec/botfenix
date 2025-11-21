@@ -477,10 +477,43 @@ const extractNameFromMessage = (message: string): string | undefined => {
   return undefined;
 };
 
+const TIME_REFERENCE_KEYWORDS = [
+  'mañana',
+  'tarde',
+  'noche',
+  'mediodia',
+  'medio dia',
+  'mediodía',
+  'hoy',
+  'pasado mañana',
+  'fin de semana',
+  'semana',
+  'lunes',
+  'martes',
+  'miércoles',
+  'miercoles',
+  'jueves',
+  'viernes',
+  'sábado',
+  'sabado',
+  'domingo',
+];
+
+const isLikelyTimeExpression = (value: string): boolean => {
+  const normalized = value.toLowerCase();
+  if (TIME_REFERENCE_KEYWORDS.some((keyword) => normalized.includes(keyword))) {
+    return true;
+  }
+  return /\b\d{1,2}\s*(am|pm|hrs?|horas)\b/.test(normalized) || /\b\d{1,2}[:.]\d{2}\b/.test(normalized);
+};
+
 const extractCityFromMessage = (message: string): string | undefined => {
   const match = message.match(/(?:de|desde|en)\s+([a-záéíóúüñ\s]+)/i);
   if (match?.[1]) {
-    return capitalizeWords(match[1].trim());
+    const candidate = capitalizeWords(match[1].trim());
+    if (!isLikelyTimeExpression(candidate)) {
+      return candidate;
+    }
   }
   return undefined;
 };
@@ -489,8 +522,11 @@ const updateSessionInsights = (session: LeadSession, message: string): void => {
   const lower = message.toLowerCase();
   const cityMatch = message.match(/(?:soy de|estoy en|en la ciudad de|ciudad\s*)([a-záéíóúüñ\s]+)/i);
   if (cityMatch && !session.city) {
-    session.city = capitalizeWords(cityMatch[1].trim());
-    session.cityAllowed = isCitySupported(session.city);
+    const candidate = capitalizeWords(cityMatch[1].trim());
+    if (!isLikelyTimeExpression(candidate)) {
+      session.city = candidate;
+      session.cityAllowed = isCitySupported(session.city);
+    }
   }
 
   const interestKeywords = ['tenis', 'zapatos', 'running', 'bolsa', 'gym', 'atleta'];
